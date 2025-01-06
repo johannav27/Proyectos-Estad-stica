@@ -1,0 +1,273 @@
+<!--
+5. Modelos lineales generalizados para datos categóricos
+La base de datos Preg5.csv contiene información sobre el interés de aplicar a una maestría o doctorado
+(apply: unlikely, somewhat likely, very likely) de una muestra aleatoria de 400 estudiantes de universidad.
+El interés es identificar si entre los factores que definen este interés están: el tipo de universidad (public: 1
+public, 0 private), si alguno de los padres estudió un posgrado (pared: 1 sí, 0 no) y el promedio actual en
+sus estudios universitarios (gpa).
+
+<!--
+i. En este caso hay dos covariables que son categóricas, así que se puede obtener una gráfica que describa
+las frecuencias relativas para los tres niveles de interés de aplicación y cada cruce de las variables
+categóricas public:pared. Presente esta gráfica y comente lo que se observa.
+-->
+
+```{r Carga de datos y ajuste de modelo 5, include=FALSE}
+#Cargamos la base de datos
+Preg5 <- read_csv("Preg5.csv")
+
+#Ajustamos variables
+Preg5$apply <- factor(Preg5$apply, levels = c("unlikely", "somewhat likely", "very likely"), ordered = TRUE)
+Preg5$public <- factor(Preg5$public)
+Preg5$pared <- as.factor(Preg5$pared)
+str(Preg5)
+pared_names <- c(
+                    "0" = "Padres sin posgrado",
+                    "1" = "Padres con posgrado"
+                    )
+public_names <- c(
+                    "0" = "P",
+                    "1" = "Pública"
+                    )
+```
+
+Para un análisis global de la base de datos, se presenta una gráfica de frecuencias relativas:
+
+
+
+```{r echo=FALSE, fig.dim = c(10, 4)}
+# Calcular las frecuencias relativas por el cruce de 'public' y 'pared'
+Preg5_rel <- Preg5 %>%
+  group_by(pared, public, apply) %>%
+  summarise(n = n()) %>%
+  mutate(freq_rel = n / sum(n))  # Frecuencia relativa dentro de cada cruce de public y pared
+
+# Gráficar usando las frecuencias relativas calculadas
+Preg5_rel %>%
+  ggplot(aes(x = apply, y = freq_rel, fill = public)) +
+  geom_bar(stat = "identity", position = "dodge") +  # position "dodge" para barras lado a lado
+  facet_wrap(~pared, labeller = as_labeller(pared_names)) +
+  labs(
+    title = "Frecuencias relativas de interés de aplicación a un posgrado",
+    x = "Interés de aplicación",
+    y = "Frecuencia relativa",
+    fill = "Tipo de Universidad"
+  ) +
+  scale_fill_manual(labels = c("Privada", "Pública"), values = PALETA) +  # Estilo minimalista
+  theme(
+    legend.position = "top",  # Mueve la leyenda a la parte superior
+    legend.title = element_text(face = "bold")
+  )
+
+```
+
+
+En donde podemos ver que la proporción de estudiantes que muestran interés en estudiar un posgrado es mayor si los padres han estudiado un posgrado, independientemente de si la universidad es pública o privada. Además, si los padres no han estudiado un posgrado, la proporción de estudiantes interesados disminuye considerablemente.
+Además, podemos ver la relación de las calificaciones con el interés de aplicación a un posgrado:
+<!--ii. También hay una variable continua, así que se puede obtener una gráfica (boxplot o histograma) que
+describa las distribuciones de gpa para los tres niveles de interés de aplicación. Presente esta gráfica y
+comente lo que se observa.-->
+```{r Gráfica de cajas 5, echo=FALSE, fig.dim = c(10, 4)}
+Preg5 %>%
+  ggplot(aes(x = apply, y = gpa, fill = apply)) +
+  geom_boxplot(outlier.shape = 21, outlier.size = 2, outlier.stroke = 0.5) +  # Personalización de los outliers
+  labs(
+    title = "Distribución de GPA por Interés de Aplicación",
+    x = "Interés",
+    y = "GPA"
+  ) +
+  scale_fill_manual(values = PALETA)
+```
+En la gráfica anterior se observa que los estudiantes que muestran un interés elevado en estudiar un posgrado tienen un promedio de calificaciones generalmente más alto que los estudiantes desinteresados; éstos últimos además presentan una mayor dispersión en sus calificaciones.
+
+<!--
+iii. Ajuste un modelo logístico multinomial considerando todas las posibles interacciones entre gpa, public
+y pared. Este modelo tiene demasiados parámetros y es de interés buscar si es posible considerar un
+modelo más simple. Ajuste un modelo logístico multinomial que incluya a las tres covariables gpa,
+public y pared, pero sin considerar interacciones. Realice una prueba de hipótesis para argumentar si
+es plausible considerar el modelo más simple. Complemente esto con medidas como AIC o BIC.
+-->
+Ahora, ajustaremos un modelo logístico multinomial considerando todas las posibles interacciones entre gpa, public y pared. Posteriormente, ajustaremos un modelo similar que incluya a las tres covariables gpa, public y pared pero solamente en sus efectos principales. Finalmente, realizaremos una prueba de hipótesis para argumentar si es plausible considerar el modelo más simple, además de la prueba equivalente a la F asociada a la tabla ANOVA.
+```{r Ajuste de modelo 5, include=FALSE}
+#Ajustamos el modelo
+fit_interacciones <- vglm(apply ~ pared*public*gpa, family = multinomial(), data =Preg5)
+#Ajustamos el modelo sin
+fit_restringido <- vglm(apply ~ pared+public+gpa, family = multinomial(), data =Preg5)
+# Realizamos el modelo con solo un intercepto para poder comparar los modelos
+fit_null <- vglm(apply ~ 1, family = multinomial(), data = Preg5)
+# Realizamos una prueba anova para comparar ambos modelos
+anova(fit_restringido, fit_interacciones, type = "I")
+anova(fit_null, fit_restringido, type = "I")
+BIC(fit_restringido)
+BIC(fit_interacciones)
+BIC(fit_null)
+```
+| Modelo 1      | Modelo 2       | p-valor |
+|---------------|----------------|---------|
+| 'Restringido' | 'Completo'     | 0.117   |
+| 'Restringido' | 'Constante'    | 0.0001  |
+
+Al hacer la prueba de hipótesis obtenemos un p-valor mayor a $0.05$ en primer lugar, así que no hay evidencia suficiente para rechazar la hipótesis nula de que el modelo restringido es mejor que el modelo con interacciones, y al tener menos variables, se nos sugiere que este modelo es preferible.
+Además, al comparar el modelo restringido con el modelo con solo un intercepto (prueba equivalente a la F asociada a la tabla ANOVA), obtenemos un p-valor menor a $0.05$, lo que nos sugiere que el modelo restringido tiene sentido.
+Por último, comparemos los modelos usando los criterios de información AIC y BIC:
+
+| Modelo         | AIC     | BIC     |
+|----------------|---------|---------|
+| 'Restringido'  |  729.99 | 761.92  |
+| 'Interacciones'|  733.16 | 797.02  |
+
+Los criterios AIC y BIC son menores para el modelo restringido, lo que sugiere que este modelo es preferible al modelo con interacciones y al modelo con solo un intercepto.
+<!--
+iv. Considerando las covariables del modelo seleccionado en iii) y notando que la variable apply puede ser
+considerada como ordinal, ajuste un modelo logístico acumulativo (cumulative logit) sin considerar el
+supuesto de proporcionalidad. También ajuste un modelo que asuma el supuesto de proporcionalidad
+y dado que este último está anidado en el primero, realice una prueba de hipótesis para analizar si es
+plausible asumir este modelo más sencillo. Complemente su decisión con medidas como AIC o BIC.
+-->
+Ahora, ajustaremos un modelo logístico acumulativo (cumulative logit) sin considerar el supuesto de proporcionalidad. Posteriormente, ajustaremos un modelo que asuma el supuesto de proporcionalidad. Dado que este último está anidado en el primero, realizaremos una prueba de hipótesis para analizar si es plausible asumir este modelo más sencillo.
+```{r Ajuste de modelo 5 _ 2, include=FALSE}
+#Ajustamos el modelo sin proporcionalidad
+fit_acumulativo <- vglm(apply ~ pared+public+gpa, family = cumulative(parallel = FALSE), data =Preg5)
+#Ajustamos el modelo con proporcionalidad
+fit_proporcional <- vglm(apply ~ pared+public+gpa, family = cumulative(parallel = TRUE), data =Preg5)
+# Realizamos una prueba anova para comparar ambos modelos
+anova(fit_acumulativo, fit_proporcional, type = "I")
+BIC(fit_acumulativo)
+BIC(fit_proporcional)
+```
+
+| Modelo 1               | Modelo 2               | p-valor|
+|------------------------|------------------------|--------|
+| 'Con proporcionalidad' | 'Sin proporcionalidad' | 0.26   |
+
+Así que no hay evidencia suficiente para rechazar la hipótesis nula de que el modelo con proporcionalidad es mejor que el modelo sin proporcionalidad, por lo que preferiremos el segundo.
+Ahora, compararemos el BIC de los 4 modelos ajustados:
+
+| Modelo             | BIC     |
+|--------------------|---------|
+| 'Restringido'      | 761.92  |
+| 'Interacciones'    | 797.02  |
+| 'No-Proporcional'  | 760.94  |
+| 'Proporcional'     | 746.98  |
+
+El modelo con proporcionalidad es el que tiene el menor BIC, por lo que es el modelo preferible.
+<!--
+v. Usando el AIC o BIC, seleccione sólo un modelo entre los ajustados en iii) y iv). Con ese modelo,
+trate de interpretar los resultados usando pruebas de hipótesis sobre los coeficientes del modelo. Puede
+apoyarse de una gráfica, por ejemplo, para diferentes valores de gpa grafique las probabilidades de cada
+nivel de la variable apply dejando fijos los valores de las variables pared y public.
+-->
+
+Así las cosas, tenemos los siguientes parámetros en el modelo:
+
+| Parámetro      | logit(P[Y<=1])     | logit(P[Y<=2])     |
+|----------------|--------------------|--------------------|
+| `intercept`    |  2.2               | 4.29               |
+| `pared1`       |  -1.04             | -1.04              |
+| `public1`      |  0.059             | 0.059              |
+| `gpa`          |  -0.61             | -0.61              |
+
+El cual es gobernado por la siguiente ecuación:
+$$logit(P(Y\leq j))=\beta_{0}^{(j)}+\beta_1x_1+\beta_2x_2+\beta_3x_3$$
+Con ellos podemos empezar a responder a las preguntas formuladas durante el análisis exploratorio:
+
+1.-¿Ocurre que el no tener padres con posgrado, hace que sea más probable que no estemos interesado en cursar uno?
+
+Con el modelo lo podemos plantear de la forma siguiente:
+\begin{align*}
+H_0: P(\text{\footnotesize Desinteresado en un posgrado | Padres sin posgrado}) &\leq P(\text{\footnotesize Desinteresado en un posgrado | Padres con posgrado})\\
+H_a: P(\text{\footnotesize Desinteresado en un posgrado | Padres sin posgrado}) &> P(\text{\footnotesize Desinteresado en un posgrado | Padres con posgrado})
+\end{align*}
+
+Esta prueba se termina simplificando de manera simple sobre $\beta_1$:
+\begin{align*}
+H_0: \beta_1 \geq 0 \hspace{1cm} H_a: \beta_1 < 0\\
+\end{align*}
+2.-¿El venir de una universidad pública o privada afecta en la probabilidad de estar interesado en un posgrado?
+De manera similar, podemos plantear la prueba de hipótesis sobre $\beta_2$, pues es el único parámetro asociado a la variable `public`:
+\begin{align*}
+H_0: \beta_2 = 0 \hspace{1cm} H_a: \beta_2 \neq 0\\
+\end{align*}
+3.- ¿Tener buenas calificaciones, reduce la probabilidad de no estar interesado en un posgrado?
+En este caso, podemos plantear la prueba de hipótesis sobre $\beta_3$:
+\begin{align*}
+H_0: \beta_3 \geq 0 \hspace{1cm} H_a: \beta_3 < 0\\
+\end{align*}
+
+```{r Pruebas de hipótesis 5, include=FALSE}
+#Prueba de hipótesis 1
+K=matrix(c(0,0,1,0,0), ncol=5, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(fit_proporcional, linfct=K, rhs=m, alternative = "less"), test=Chisqtest())
+#Prueba de hipótesis 2
+K=matrix(c(0,0,0,1,0), ncol=5, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(fit_proporcional, linfct=K, rhs=m), test=Chisqtest())
+#Prueba de hipótesis 3
+K=matrix(c(0,0,0,0,1), ncol=5, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(fit_proporcional, linfct=K, rhs=m, alternative = "less"), test=Chisqtest())
+```
+Presentamos los resultados de las pruebas en la siguiente tabla:
+
+| Prueba de hipótesis  | p-valor   |
+|----------------------|-----------|
+| Prueba 1             | 9.5E-10   | 
+| Prueba 2             | 0.83      |
+| Prueba 3             | 0.019     |
+
+De donde concluimos que tener padres con posgrado disminuye la probabilidad de no estar interesado en un posgrado y tener buenas calificaciones afecta de manera negativa la probabilidad de no estar interesado en un posgrado.
+Además, no se encontró evidencia suficiente para afirmar que el tipo de universidad afecta la probabilidad de no estar interesado en un posgrado.
+
+Ahora, graficaremos las probabilidades de estar interesado en un posgrado para diferentes valores de `gpa`, dejando fijos los valores de `pared` y `public`:
+
+
+
+```{r echo=FALSE, fig.dim = c(10, 6)}
+gpa_vals <- seq(min(Preg5$gpa), max(Preg5$gpa), length.out = 100)
+
+# Crear una lista con las combinaciones de public y pared
+combinaciones <- expand.grid(public = c(0, 1), pared = c(0, 1))
+
+# Crear un dataframe vacío para almacenar todos los resultados
+pred_df_total <- data.frame()
+
+for (i in 1:nrow(combinaciones)) {
+  # Asignar los valores de public y pared para la iteración actual
+  public_val <- combinaciones$public[i]
+  pared_val <- combinaciones$pared[i]
+  
+  # Crear el dataframe de predicciones
+  predicciones <- data.frame(
+    gpa = gpa_vals,
+    public = factor(rep(public_val, 100), levels = c(0, 1)),  # Fijamos public como factor
+    pared = factor(rep(pared_val, 100), levels = c(0, 1))     # Fijamos pared como factor
+  )
+  
+  # Predecir las probabilidades
+  pred_prob <- predict(fit_proporcional, newdata = predicciones, type = "response")
+  
+  # Crear dataframe para ggplot
+  pred_df <- data.frame(
+    gpa = rep(gpa_vals, times = 3),
+    probabilidad = c(pred_prob[,1], pred_prob[,2], pred_prob[,3]),
+    apply = rep(c("unlikely", "somewhat likely", "very likely"), each = 100),
+    public = factor(public_val, levels = c(0, 1)),
+    pared = factor(pared_val, levels = c(0, 1))
+  )
+  
+  # Agregar el dataframe a pred_df_total
+  pred_df_total <- rbind(pred_df_total, pred_df)
+}
+
+# Graficar todas las combinaciones en un solo panel usando facet_grid
+ggplot(pred_df_total, aes(x = gpa, y = probabilidad, color = apply)) +
+  geom_line(size = 1) +
+  facet_grid(public ~ pared, labeller = labeller(public = c("0" = "Privada", "1" = "Pública"),
+                                                 pared = c("0" = "Padres sin posgrado", "1" = "Padres con posgrado"))) +
+  labs(title = "Probabilidades para diferentes valores de GPA",
+       x = "GPA", y = "Probabilidad", color = "Aplicación") +
+  scale_color_manual(values = PALETA) 
+```
+En donde se confirma que tener buenas calificaciones disminuye la probabilidad de no estar interesado en un posgrado, independientemente de si los padres han estudiado un posgrado o si la universidad es pública o privada.
+Además, vemos que en efecto, el hecho de que la universidad sea publica o privada no afecta en gram medida la probabilidad de interesarse en un posgrado.

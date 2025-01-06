@@ -1,0 +1,170 @@
+<!-- 
+i)  Explorando los diferentes modelos lineales generalizados comúnmente usados cuando la variable dependiente es continua (normal, gamma, inversa Gaussiana), presente un modelo que le parezca adecuado
+
+para modelar E(bpsystol; bmi,sex, age). Considere por simplicidad que no hay interacción entre las
+covariables del modelo. Deberá indicar con claridad cuál es la expresión matemática que se usa para
+modelar E(bpsystol; bmi,sex, age), así como describir el procedimiento y criterio usado para seleccionar
+el modelo.
+-->
+
+```{r Carga de archivos,include=FALSE}
+#Cargamos la base de datos
+Preg1A <- read_csv("Preg1A.csv")
+
+#Ajustamos la variable sex como factor
+Preg1A$sex <- as.factor(Preg1A$sex)
+```
+
+Buscamos y seleccionamos un modelos entre un conjunto de modelos GLM, los aspectos que consideraremos serán la función liga y la distribución del componente aleatorio. Dado que bpsystol es una variable continua y positiva vamos a considerar las siguientes tres distribuciones para modelar esta variable, distribución normal, distribución Gamma y distribución inversa Gaussiana. También buscaremos entre las distintas funciones ligas que se usan normalmente para estos modelos, identidad, log, inversa e inversa cuadrada (ésta última solo para inversa Gaussiana). Entre todos los modelos buscamos aquel que tenga un menor AIC. Por simplicidad no vamos a considerar interacciones entre las covariables de nuestro modelo.
+
+Además, consideremos las siguientes expresiones matemáticas que representan nuestras variables y covariables del modelo:
+
+bpsystol: Presión arterial sistólica
+
+bmi: Índice de masa corporal
+
+age: Edad
+
+sex: Covariable binaria que representa el sexo de la persona (nivel de ref. sexo=1).
+
+```{r Busqueda y seleccion del modelo,include=FALSE}
+#Definimos las mallas para la búsqueda
+Distribuciones=c("gaussian", "Gamma", "inverse.gaussian")
+FunLigas=c("identity", "log", "inverse", "1/mu^2")
+#guardamos la longitud de los vectores anteriores
+nFunLigas=length(FunLigas)
+nDist=length(Distribuciones)
+#Definimos listas para guardar la información sobre nuestro modelo
+ModelList=list(NA)  #guardar resultados del ajuste, objeto glm
+AICList=list(NA)    #guardar el AIC del modelo
+BICList=list(NA)    #guardar el BIC del modelo
+
+#Buscamos entre las distribuciones de bysistol y las funciones ligas
+index=0
+for(j in 1:nDist){
+    for(l in 1:nFunLigas){
+      if(FunLigas[l]=="1/mu^2"){
+        if(Distribuciones[j]=="inverse.gaussian"){
+          index=index+1
+          Dist=get(Distribuciones[j])  #obtener la función a usar
+          Mod.A.Prueba=glm(bpsystol~bmi+age+sex, data=Preg1A, family = Dist(link=FunLigas[l]))
+          ModelList[[index]]=Mod.A.Prueba
+          AICList[[index]]=AIC(Mod.A.Prueba)
+          BICList[[index]]=BIC(Mod.A.Prueba)
+        }
+      }else{
+        index=index+1
+        Dist=get(Distribuciones[j])
+       Mod.A.Prueba=glm(bpsystol~bmi+age+sex, data=Preg1A, family = Dist(link=FunLigas[l]))
+        ModelList[[index]]=Mod.A.Prueba
+        AICList[[index]]=AIC(Mod.A.Prueba)
+        BICList[[index]]=BIC(Mod.A.Prueba)
+      }}}
+```
+
+```{r include=FALSE}
+#Creamos un dataframe con los AICs ordenados
+AICList = unlist(AICList)
+BICList = unlist(BICList)
+indices=cbind(index=1:length(ModelList), AIC=AICList, BIC=BICList)
+indices=indices[order(AICList),]
+#Basándonos en la columna index del dataframe anterior
+#Notamos que los modelos con menor AIC son el 4, 7 y 5
+ModelAICMin=ModelList[[4]]
+summary(ModelAICMin)
+ModelAICMin$family
+```
+
+Entre los modelos anteriores encontramos que el modelo con menor AIC es aquel que usa una distribución Gamma y una función liga identidad, con un **AIC=3541**, la expresión matemática de dicho modelo es la siguiente:
+$$\text{glm:    Gamma con    E}(\text{bpsystol; bmi, sex, age}) = \beta_0 + \beta_1 \text{bmi} + \beta_2 \text{age}+ \beta_3 \text{sexo}$$
+En primer lugar, la prueba $F$ asociada a la tabla anova se rechaza con un $p$-valor de $1.54e-34$, esto nos indica que el modelo anterior tiene sentido, pues al menos una covariable nos aporta información.
+
+```{r include=FALSE}
+#Prueba F
+K=matrix(c(0,1,0,0,
+           0,0,1,0,
+           0,0,0,1), ncol=4, nrow=3, byrow=TRUE)
+m=c(0,0,0)
+summary(glht(ModelAICMin, linfct=K, rhs=m), test=Ftest())  #F formato prueba lineal general
+```
+
+```{r include=FALSE}
+#Pruebas componente lineal
+residualPlots(ModelAICMin)
+# Para analizar el supuesto del componente aleatorio y función liga
+# usando residuales quantile
+ModelAICMin_resid <- qresid(ModelAICMin)
+nortest::lillie.test(ModelAICMin_resid)
+shapiro.test(ModelAICMin_resid)
+```
+```{r versup-darma,fig.cap="Verificación de supuestos.",fig.dim = c(13, 6.5)}
+ModelAICMin_simres <- simulateResiduals(fittedModel = ModelAICMin)
+plot(ModelAICMin_simres)
+```
+
+Pasamos a la verificación de supuestos. Revisamos los gráficos de \@ref(fig:versup-darma); por un lado la QQ-plot parece no mostrar evidencias en contra de los supuestos; además las pruebas de hipótesis incluidas en la gráfica no se rechazan, lo que no suma evidencia en contra de nuestros supuestos. Por  otro lado, la gráfica a su derecha no muestra problemas para nuestro modelo.
+
+Para el componente lineal realizamos las pruebas de linealidad proporcionada por `residualPlots`, los $p$-valores de 0.019 en cada una de las covariables continuas no indican pruebas en contra del supuesto de linealidad. Para analizar el componente aleatorio y la función liga realizamos un par de pruebas de hipótesis usando residuales quantile. Tanto la prueba `Lilliefors` como la prueba `Shapiro-Wilk` no se rechazan con $p$-valores de $0.9434$ y $0.8726$ respectivamente. En resumen, no hay pruebas contundentes en contra de nuestros supuestos. Por lo que es plausible considerar el modelo. 
+
+<!-- 
+ii)  ¿Se puede indicar que para una persona de cierta edad y sexo, tener un índice de masa corporal alto se asocia con una alta presión arterial sistólica?. Argumente su respuesta, indicando con claridad la prueba o pruebas de hipótesis usadas y las hipótesis que se están contrastando. 
+-->
+
+Dado que nuestra función liga es la identidad, la forma matemática de nuestro modelo nos hace ver que análogo al caso del ejercicio 1 si el coeficiente asociado a la variable `bmi` es mayor a cero, entonces al tener un `bmi` alto y considerando nuestras demás covariables fijas, la presión arterial debería de aumentar. Por lo que la prueba nuevamente es
+
+$$H_o: \beta_1 \leq 0 \hspace{1cm}vs\hspace{1cm} H_a: \beta_1 > 0$$
+Buscamos rechazar $H_o$. Con un $p$-valor de $2e-16$ y una significancia de $0.05$ se rechaza la hipótesis nula, por lo tanto, podemos decir que a mayor bmi mayor será la presión arterial sistólica.
+
+```{r include=FALSE}
+#Prueba lineal general
+K = matrix(c(0, 1, 0, 0), nrow = 1, ncol = 4, byrow = TRUE)
+m = c(0)
+summary(glht(ModelAICMin, linfct = K, rhs = m, alternative = "greater"))
+```
+
+<!-- 
+iii)   Para complementar la interpretación de los resultados del inciso iii), presente una gráfica resumen con la estimación puntual asociada a la relación entre $bpsystol$ y $bmi$. Para esto considere sólo tres posibles edades: 25, 40 y 60, así como la diferenciación entre las mujeres y hombres. Comente e interprete lo que se observa en la gráfica, indicando con claridad a qué parámetro corresponde la curva/recta. 
+-->
+```{r include=FALSE}
+#obtenemos las predicciones con nuestro modelo
+datoseval=data.frame(bmi=c(),sex=c(),age=c())
+for(i in 1:2){
+  for(j in c(25,40,60)){
+    datosevaltemp=data.frame(bmi= seq(15,45,by=0.2),sex=i,age=j)
+    datoseval=rbind(datoseval,datosevaltemp)
+  }
+}
+datoseval$sex <- factor(datoseval$sex)
+predicciones <- data.frame(bpsystol=predict(ModelAICMin, newdata=datoseval, type="response" ))
+predicciones <- cbind(datoseval,predicciones)
+```
+```{r figuritaschidas,fig.cap="Gráficas ejercicio 2 iii).",fig.dim = c(10, 4)}
+datoshombre <- predicciones %>% filter(sex==1)%>%mutate(age=factor(age))
+datosmujer <- predicciones %>% filter(sex==2)%>%mutate(age=factor(age))
+
+graficash <- ggplot(datoshombre, aes(x=bmi,y=bpsystol,color=age)) +
+  geom_line(size=1)+
+  scale_color_manual(values = c('25' = PALETA[1], '40' = PALETA[2], '60' = PALETA[3]))+
+  labs(title = "Hombres", 
+       x = "Indice de masa corporal", 
+       y = "Presión arterial sistólica", 
+       color = "Edad")
+
+graficasm <- ggplot(datosmujer, aes(x=bmi,y=bpsystol,color=age)) +
+  geom_line(size=1)+
+  scale_color_manual(values = c('25' = PALETA[1], '40' = PALETA[2], '60' = PALETA[3]))+
+  labs(title = "Mujeres", 
+       x = "Índice de masa corporal", 
+       y = "Presión arterial sistólica", 
+       color = "Edad")
+print(graficash+graficasm)
+```
+
+Ver \@ref(fig:figuritaschidas). Rápidamente podemos comprobar que lo dicho anteriormente con la prueba de hipótesis, pues para una edad fija y un sexo fijo las gráficas muestran ser crecientes y se ve claramente como a mayor índice de masa corporal hay mayor presión arterial asistólica. Además, una mayor edad (entre las edades graficadas) muestra indicar un mayor valor de presión arterial fijando las demás variables. Entre mujeres y hombres, los hombres parecen tener una cantidad de bpsystol más alta fijando las variables bmi y edad. 
+<!-- 
+iii)  Comparando el modelo en i) con el usado en la pregunta 1, compare las conclusiones e interpretaciones
+que se pueden obtener e indique qué modelo prefiere usar. Argumente con claridad su respuesta, por
+ejemplo, debe incluir los valores de AIC o BIC, así como ventajas y desventajas en la interpretación.
+-->
+
+En el modelo usado en la pregunta 1, tenemos un modelo de regresión lineal clásico, sin embargo este esta modelado sobre una transformación para nuestra variable de interés lo cual dificulta en gran medida la interpretación de los coeficientes. Por otro lado, el modelo de regresión lineal generalizado que usamos en este ejercicio, nos permite modelar directamente la variable de interés, además de que nos permite modelar la varianza de la variable de interés. En cuanto a los valores de AIC y BIC, el modelo de regresión lineal generalizado tiene un AIC de 3541, el modelo de regresión lineal clásico tiene un AIC de 3539. Pese a que no existe una notable diferencia en cuanto al rendimiento de ambos modelos en términos del AIC, como el modelo de regresión lineal generalizado es más interpretable y nos permite modelar directamente la variable de interés, preferimos usar este modelo. 

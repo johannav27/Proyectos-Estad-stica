@@ -1,0 +1,217 @@
+<!--
+La base de datos $Preg3A.csv$ contiene información sobre 952 insectos que fueron expuestos a diferentes dosis (Deposit, mg) de tres insecticidas (Insecticide). La asignacón a una dosis y a un tipo de insecticida se realizó de forma aleatoria. Después de seis días se analizó si los insectos se habían muerto, de manera que la base de datos contiene también el numero de insectos muertos (Killed) y el numero total de insectos expuestos (Number) por cada dosis e insecticida. Dado que se asume que el costo de los insecticidas es el mismo, el objetivo del análisis es identificar para cada insecticida qué dosis es la mínima con la que se puede indicar que el 70% de los insectos se muere, así como si considerando la menor de esas tres dosis se puede afirmar que un insecticida es el mejor comparado con el resto.
+
+Notar que aquí el evento de interés es si el insecto muere o no. Además, dado que se tienen varios insectos para diferentes valores de dosis e insecticida, es posible realizar gráficas que ayudan a entender lo que se está modelando; de hecho la base de datos está en un formato agregado.
+-->
+
+```{r Carga de datos pregunta 3, include=FALSE}
+# Cargando la base de datos
+Preg3A <- read_csv("Preg3A.csv")
+Preg3A$Insecticide <- factor(Preg3A$Insecticide)
+```
+
+
+<!--
+i)  Presente una gráfica de dispersión en donde en el eje $x$ se incluya la dosis del insecticida y en el eje $y$ la proporción de insectos muerto observados para cada combinación dosis-insecticida, distinguiendo con un color el insecticida asociado. Describa lo que se observa.
+-->
+
+```{r Grafica de dispersión}
+# Gráfica de dispersión
+Preg3A %>% 
+  ggplot(aes(x = Deposit, y = Killed / Number, color = Insecticide)) +
+  geom_point() + 
+  scale_color_manual(values = c("A" = PALETA[1], "B" = PALETA[2], "C" = PALETA[3])) +
+  labs(title = "Proporción de insectos muertos por dosis",
+       x = "Dosis de insecticida",
+       y = "Proporción de insectos muertos")
+
+```
+En esta gráfica podemos observar que en general parece que el insecticida C es el que tiene el mejor desempeño de los tres, pues presenta en general una mayor proporción de insectos muertos en cualquier dosis. Por otro lado los insecticidas A y B parecen tener un desempeño parecido. En general también se observa que a mayor dosis de insecticida, la proporción de insectos muertos aumenta.
+
+<!--
+ii)  Ajuste modelos para datos binarios (ligas: logit, probit, cloglog) en donde incluya como covariables a `Insecticide` y Deposit, así como su interacción. Describa las expresiones del componente lineal o sistemático para cada insecticida como función de la dosis. Indique si alguno de los modelos parece adecuado para realizar el análisis deseado.
+-->
+
+Entonces si consideramos el insecticida A como el nivel de referencia, los modelos que entrenaremos serán de la forma:
+
+$$
+\eta = \beta_0 + \beta_1 \mathds{1}_{\text{I=B}} + \beta_2 \mathds{1}_{\text{I=C}} + \beta_3 \text{D} + \beta_4 \text{D} \mathds{1}_{\text{I=B}} + \beta_5 \text{D} \mathds{1}_{\text{I=C}}
+$$
+
+Donde D representa a nuestra covariable Deposit e I representa a nuestra covariable Insecticide. Así las expresiones del componente lineal o sistemático para cada insecticida como función de la dosis son:
+\begin{align*}
+\text{Insecticida A} &= \eta = \beta_0 + \beta_3 \text{D}\\
+\text{Insecticida B} &= \eta = \beta_0 + \beta_1 + \beta_3 \text{D} + \beta_4 \text{D}\\
+\text{Insecticida C} &= \eta = \beta_0 + \beta_2 + \beta_3 \text{D} + \beta_5 \text{D}
+\end{align*}
+
+Considerando modelos que tienen como liga a las funciones: logit, probit y cloglog, veamos si alguno de los modelos parecen adecuados, para esto buscamos que cumplan con los supuestos de normalidad y linealidad en los residuos, además de que consideraremos el AIC como un discriminante en su elección
+
+```{r Entrenamiento de modelos con interaaciones iniciales, include=FALSE}
+#Entrenamiento de modelos
+fit_3A_logit <- glm(cbind(Killed, Number - Killed) ~ Insecticide*Deposit, family = binomial(link= "logit"), data = Preg3A)
+fit_3A_probit <- glm(cbind(Killed, Number - Killed) ~ Insecticide*Deposit, family = binomial(link= "probit"), data = Preg3A)
+fit_3A_cloglog <- glm(cbind(Killed, Number - Killed) ~ Insecticide*Deposit, family = binomial(link= "cloglog"), data = Preg3A)
+
+#Resumen de los modelos
+summary(fit_3A_logit)
+summary(fit_3A_probit)
+summary(fit_3A_cloglog)
+
+#Pruebas de normalidad y linealidad de los residuos
+fitlogitres <- simulateResiduals(fittedModel = fit_3A_logit)
+fitprobitres <- simulateResiduals(fittedModel = fit_3A_probit)
+fitcloglogres <- simulateResiduals(fittedModel = fit_3A_cloglog)
+
+#Gráficas de normalidad y linealidad de los residuos
+plot(fitlogitres)
+plot(fitprobitres)
+plot(fitcloglogres)
+
+```
+
+Así, las pruebas de normalidad y linealidad de los residuos para los modelos logit, probit y cloglog son:
+
+|Liga del modelo| KS test|Linealidad|AIC   |
+|---------------|--------|----------|------|
+| `logit`       | 0.054  |No        |121.39|
+| `probit`      | 0.065  |No        |122.98|
+| `cloglog`     | 0.054  |No        |135.49|
+
+Como todos los modelos con las ligas propuestas han tenido problemas para el componente lineal de nuestra covariable Deposit, ninguno de los modelos es adecuado para realizar el análisis deseado. Por lo que consideramos agregar a nuestro modelo una nueva covariable que sea el cuadrado de la dosis de nuestro insecticida, así como su interacción con cada insecticida.
+
+<!--
+iii)  Ajuste modelos para datos binarios (ligas: logit, probitm cloglog) en donde adicional a las covariables incluidas en ii), también incluya a la interacción de Insicticide con Deposit^2. Describa las expresiones del componente lineal o sistematico para cada insecticida como función de la dosis. Indique si alguno de los modelos parece adecuado para realizar el análisis deseado y si tiene alguna ventaja la inclusión de los términos cuadráticos en el modelo
+-->
+
+Entonces tenemos que los modelos que entrenaremos serán de la forma:
+
+$$
+\eta = \beta_0 + \beta_1 \mathds{1}_{\text{I=B}} + \beta_2 \mathds{1}_{\text{I=C}} + \beta_3 \text{D} + \beta_4 \text{D} \mathds{1}_{\text{I=B}} + \beta_5 \text{D} \mathds{1}_{\text{I=C}} + \beta_6 \text{D}^2\mathds{1}_{I=A} + \beta_7 \text{D}^2 \mathds{1}_{\text{I=B}} + \beta_8 \text{D}^2 \mathds{1}_{\text{I=C}}
+$$
+De lo cual, tenemos que la expresión del componente lineal o sistemático para cada insecticida como función de la dosis son:
+
+\begin{align*}
+\text{Insecticida A} &= \eta = \beta_0 + \beta_3 \text{D} + \beta_6 \text{D}^2\\
+\text{Insecticida B} &= \eta = \beta_0 + \beta_1 + \beta_3 \text{D} + \beta_4 \text{D} + \beta_7 \text{D}^2\\
+\text{Insecticida C} &= \eta = \beta_0 + \beta_2 + \beta_3 \text{D} + \beta_5 \text{D} + \beta_8 \text{D}^2
+\end{align*}
+
+Nuevamente considerando que estamos usando ligas: logit, probit y cloglog, veamos si alguno de los modelos parece adecuado, para esto buscamos que cumplan con los supuestos de normalidad y linealidad en los residuos, además de que consideraremos el AIC como un discriminante en su elección
+
+```{r Entrenamiento de modelos con variable Deposit^2 agregada, include=FALSE}
+#Entrenamiento de modelos
+fit_3A_logit2 <- glm(cbind(Killed, Number - Killed) ~ Insecticide*Deposit + Insecticide:I(Deposit^2), family = binomial(link= "logit"), data = Preg3A)
+fit_3A_probit2 <- glm(cbind(Killed, Number - Killed) ~ Insecticide*Deposit + Insecticide:I(Deposit^2), family = binomial(link= "probit"), data = Preg3A)
+fit_3A_cloglog2 <- glm(cbind(Killed, Number - Killed) ~ Insecticide*Deposit + Insecticide:I(Deposit^2), family = binomial(link= "cloglog"), data = Preg3A)
+
+#Resumen de los modelos
+summary(fit_3A_logit2)
+summary(fit_3A_probit2)
+summary(fit_3A_cloglog2)
+
+#Pruebas de normalidad y linealidad de los residuos
+fitlogitres2 <- simulateResiduals(fittedModel = fit_3A_logit2)
+fitprobitres2 <- simulateResiduals(fittedModel = fit_3A_probit2)
+fitcloglogres2 <- simulateResiduals(fittedModel = fit_3A_cloglog2)
+
+#Gráficas de normalidad y linealidad de los residuos
+plot(fitlogitres2)
+plot(fitprobitres2)
+plot(fitcloglogres2)
+
+```
+
+|Liga del modelo| KS test|Linealidad|AIC   |
+|---------------|--------|----------|------|
+| `logit`       | 0.66   |Si        |97.77 |
+| `probit`      | 0.86   |Si        |97.92 |
+| `cloglog`     | 0.71   |Si        |99.18 |
+
+Así con los resultados obtenidos, todos los modelos parecen adecuados para realizar los análisis, sin embargo consideramos que el modelo con la liga logit es el más adecuado, pues es el que tiene el menor AIC.
+
+<!--
+iv)  Solo con el modelo que considere más adecuado entre los que se ajustaron en ii) y iii)
+  a)  Presente en la misma gráfica generada en i) los resultados de la estimación puntual para el valor esperado de la variable binaria (probabilidad de que un insecto muera).
+  b)  Calcule la dosis mínima para cada insecticida con la que se puede indicar que el 70% de los insectos se muere.
+  c)  Considerando la menor de las dosis encontradas en b), ¿Se puede indicar que un insecticida es el mejor?. Realice una prueba de hipótesis para argumentar en favor o en contra.
+  d)  En general ¿Se puede indicar que los insecticidas A y B tienen un desempeño similar?. Realice una prueba de hipótesis para argumentar en favor o en contra.
+-->
+
+Veamos ahora las estimaciones de la probabilidad de que un insecto muera dentro de nuestra gráfica de dispersión
+
+```{r Grafica con predicciones}
+# Gráfica de dispersión
+Preg3A %>% 
+  ggplot(aes(x = Deposit, y = Killed / Number, color = Insecticide)) +
+  geom_point() + 
+  scale_color_manual(values = c("A" = PALETA[1], "B" = PALETA[2], "C" = PALETA[3])) +
+  labs(title = "Proporción de insectos muertos por dosis",
+       x = "Dosis de insecticida",
+       y = "Proporción de insectos muertos") +
+  geom_line(aes(y = predict(fit_3A_logit2, type = "response")), size = 1)
+```
+
+Veamos ahora que la dosis mínima para cada insecticida, lo podemos encontrar sabiendo que buscamos que nuestra función de la liga inversa de logit sea igual a 0.7, es decir, buscamos que:
+
+$$
+\text{logit}^{-1}(\eta) = \frac{e^{\eta}}{1 + e^{\eta}} = 0.7
+$$
+De lo cual obtenemos que:
+
+$$
+\eta = 0.8473
+$$
+
+Así, solo resta despejar la variable Deposit de la parte lineal que hemos encontrado para cada insecticida. Por lo que tenemos que:
+
+\begin{align*}
+\text{Insecticida A} &= \beta_0 + \beta_3 \text{D} + \beta_6 \text{D}^2 = 0.8473\\
+\text{Insecticida B} &= \beta_0 + \beta_1 + \beta_3 \text{D} + \beta_4 \text{D} + \beta_7 \text{D}^2 = 0.8473\\
+\text{Insecticida C} &= \beta_0 + \beta_2 + \beta_3 \text{D} + \beta_5 \text{D} + \beta_8 \text{D}^2 = 0.8473
+\end{align*}
+ Por lo tanto las dosis mínimas para cada insecticida, son: 
+ 
+ |Insecticida|Dosis mínima|
+ |-----------|------------|
+ |A          | 5.83717    |
+ |B          | 5.44838    |
+ |C          | 2.58244    |
+
+De lo cual podemos sospechar que el insecticida C es el mejor, además de que pareciera que el insecticida A y B tienen un desempeño similar, por lo que realizaremos pruebas de hipótesis para confirmar nuestras sospechas. Por lo que para probar que el insecticida C es el mejor, tenemos que considerar que dado que la función liga sobre la que está nuestro modelo es una función creciente, entonces en general a mayor cantidad de insecticida tendremos una mayor probabilidad de que un insecto muera, por lo que nuestras hipótesis nulas relacionan que los parámetros de la expresión del componente lineal del insecticida C sean menores o iguales a los de los insecticidas A y B. Así, nuestra hipótesis esta conformada por:
+
+\begin{align}
+\beta_0 + \beta_2 + \beta_3 + \beta_5 + \beta_8 &< \beta_0 + \beta_3 + \beta_6\\
+\beta_0 + \beta_2 + \beta_3 + \beta_5 + \beta_8 &< \beta_0 + \beta_1 + \beta_3 + \beta_4 + \beta_7
+\end{align}
+
+Y nuestra hipótesis alternativa es que alguna de las desigualdades no se cumple, pero como queremos decir que el insecticida C es el mejor, buscamos que ambas desigualdades en (1) y (2) se rechacen de manera simultanea, por lo que si alguna de ellas no es rechazada, no podremos decir que el insecticida C es el mejor. Así al realizar la prueba de hipótesis obtenemos para cada prueba simultanea los siguientes resultados.
+
+```{r Prueba de hipotesis 1,include=FALSE}
+K=matrix(c(0,0,1,0,1,0,-1,0,1,
+           0,-1,1,0,-1,1,0,-1,1), ncol=9, nrow=2, byrow=TRUE)
+m=c(0,0)
+summary(glht(fit_3A_logit2, linfct=K, rhs=m, alternative="greater"))
+```
+
+|Renglón de la prueba|p-valor|
+|--------------------|-------|
+|(1)                 |0.0069 |
+|(2)                 |0.0014 |
+
+Así como ambas pruebas han sido rechazadas, podemos decir que en base a la información que tenemos, el insecticida C es el mejor. Por otro lado, para probar que los insecticidas A y B tienen un desempeño similar, consideramos la siguiente prueba de hipótesis
+
+\begin{align*}
+H_0: \beta_0 + \beta_3 + \beta_6 &= \beta_0 +\beta_1 + \beta_3 + \beta_4 + \beta_7\\
+&vs\\
+H_a: \beta_0 + \beta_3 + \beta_6 &\neq \beta_0 +\beta_1 + \beta_3 + \beta_4 + \beta_7
+\end{align*}
+
+```{r Prueba de hipótesis 2,include=FALSE}
+K=matrix(c(0,1,0,0,1,0,-1,1,0), ncol=9, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(fit_3A_logit2, linfct=K, rhs=m))
+```
+
+Así al realizar el test tenemos que la prueba nos arroja un p-valor de 0.394, por lo que no rechazamos la hipótesis nula y por lo tanto llegamos a la conclusión que el insecticida A y B tienen un desempeño similar.
+\newpage
