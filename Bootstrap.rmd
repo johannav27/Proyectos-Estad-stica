@@ -1,0 +1,157 @@
+<!-- 
+NOTA
+Para hacer mas rápido el proceso de compilacion a pdf, guardaré los resultados de los procesos más pesados en un archivo .rds para cargarlos y no ejecutarlos desde cero.
+-->
+
+<!--
+Sea X_1,...,X_n una muestra aleatoria de la distribución Poisson(\theta). Supongamos que el parámetro de interés a estimar es \tao(\theta) = \exp(-\theta) = \mathbb{P}(X = 0). Se puede verificar que \hat{\tao(\theta)} = \frac{n-1}{n}^{\sum_{i=1}^{n} X_i} es el UMVUE de \tao(\theta) = \exp(-\theta), sin embargo, no es tan fácil encontrar la distribución de \hat{\tao} o la expresión de V(\tao).
+-->
+<!--
+a) Una forma para aproximar el valor de V(\hat{\tao}) es el metodo Monte Carlo (MC). En general, con este método:
+\mathbb{E}(g(Z)) \sim \frac{\sum_{b=1}^{B} g(Z_b)}{B}
+Donde Z_1,...Z_B son números aleatorios de la distribución de la variable aleatoria Z. En este caso, para aplicar el metodo MC, deberiamos poder generar números aleatorios de la distribución de \hat{\tao}, lo cual podemos hacer si se conoce \theta y tambien el tamaño de la muestra n, de manera que consdierando B posibles muestras aleatorias de tamaño n de una distribución Poisson(\theta) se pueden estudiar algunas propiedades teóricas de \hat{\tao(\theta)} con los valores \hat{\tao_1},...,\hat{\tao_B} que se consideran como los datos provenientes de la distribución \hat{\tao(\theta)}.
+Suponga que \theta = 1.5, n = 25, B = 10,000 y que usará el método MC. Dé una aproximación de \mathbb{E}(\hat{\tao}) y V(\hat{\tao}). También presente el histograma de \hat{tao_1},...,\hat{tao_B}.
+-->
+```{r label = "Monte Carlo"}
+set.seed(123)
+theta <- 1.5
+n <- 25
+B <- 10000
+
+X <- rpois(n*B, theta)
+X <- matrix(X, nrow = B, ncol = n)
+
+tao_hat <- ((n-1)/n)^apply(X, 1, sum)
+
+mean_tao_hat <- mean(tao_hat)
+var_tao_hat <- var(tao_hat)
+```
+
+Para esta sección mostraremos el desempeño de los metodos de bootstrap no paramétricos comparado con metodos Monte Carlo. 
+
+Considerando una muestra aleatoria $X_1,...,X_n$ de una distribución $Poisson(\theta)$, nuestro objetivo es estimar $\hat{\tau}= e^{-\theta} = \mathbb{P}(X = 0)$. Se puede verificar que 
+
+$$\hat{\tau(\theta)} = \frac{n-1}{n}^{\sum_{i=1}^{n}}$$ 
+
+es el UMVUE\footnote{Estimador insesgado de minima varianza} de $\tau(\theta)$, sin embargo no resulta fácil encontrar la distribución de $\hat{\tau}$ o incluso resulta aún más difícil encontrar la expresión de su varianza $V(\hat{\tau})$.
+
+Por lo que primero consideramos estimar $\tau(\theta)$ a partir de métodos Monte Carlo, pues si asumimos que nuestra muestra aleatoria proviene de una distribución conocida de la cual además sabemos sus parámetros, podremos acercanos vía simulaciones a las expresiones que queremos, y mejor aún, podremos tener una muestra del estimador que nos permitirá estudiar algunas propiedades teóricas de $\hat{\tau(\theta)}$. De esta manera, consideramos a $\theta = 1.5, n =1, B=1000$, donde $B$ es el número de veces que realizaremos la simulación de $n$ variables aleatorias $Poisson$, de está manera en con el chunk [`Monte Carlo`](Ejercicios/Ejercicio1.rmd) obtenemos los siguientes resultados sobre la estimación de nuestro parámetro de interés:
+
+```{r label = "Histograma Monte Carlo"}
+ggplot() + geom_histogram(mapping = aes(x = tao_hat), bins = 28, fill = PALETA[1]) + 
+  geom_vline(mapping = aes(xintercept = exp(-1.5), colour = "Valor real"), linetype = "dashed") +
+  geom_vline(mapping = aes(xintercept = mean_tao_hat, colour = "Estimador MC" ),linetype = "dashed") +
+  labs(x = TeX("$\\hat{\\tau}$"), y = "n", title = TeX("Histograma de \\hat{\\tau}(\\theta)"),colour = "") + 
+  scale_colour_manual(values = c("Estimador MC" = PALETA[4], "Valor real" = PALETA[6]))
+```
+
+De este histograma, podemos comprobar que el método Monte Carlo resulta muy efectivo, pues de hecho tenemos un error muy pequeño, además de ello, obtenemos también los siguientes estimadores para la media y la varianza
+
+
+```{r label = "Tabla Monte Carlo"}
+kable(data.frame(Media = mean_tao_hat, Varianza = var_tao_hat), align = "c", format = "simple")
+```
+
+
+Observemos que la media estimada a través de este método se acerca mucho al valor real, y además pudimos obtener una estimación para la varianza de $\hat{\tau}$; Sin embargo este método resulta débil, pues hicimos uso de fuertes suposiciones, como la distribución de la muestra, asi como de sus parámetros, por lo que ahora consideraremos un método más robusto, el método de bootstrap no paramétrico.
+
+
+<!--
+b) A diferencia de a), en la práctica solo observamos una m.a. X_1,...,X_n y quizás no sabemos ni suponemos una distribución específica. Aún así, dado un parámetro de interés, deseamos dar alguna estimación y medidas de variabilidad, es decir, usamos un estimador especifico, por ejemplo \hat{\tao}, y estimamos la varianza de la estimación (estimamos V(\hat{\tao}) solo con la muestra). En estos casos podemos usar el método bootstrap no paramétrico.
+Considere la siguiente muestra:  {1, 3, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 2, 0, 1, 1, 1, 0, 1, 0, 2, 1, 2, 2}. Suponiendo que usará el estimador \hat{\tao} = \frac{n-1}{n}^{\sum_{i=1}^{n} X_i} para estimar \mathbb{P}(X = 0), dé la estimación de P(X = 0), así como una estimación de la varianza y un intervalo de confianza usando el método bootstrap no paramétrico, con B = 10,000. También presente el histograma de \hat{tao_1}^*,...,\hat{tao_B}^*. Comente los resultados, considerando que la muestra proviene de una distribución Poisson(\theta = 1.5), como en a)
+-->
+
+```{r Bootstrap}
+set.seed(123)
+X <- c(1, 3, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 2, 0, 1, 1, 1, 0, 1, 0, 2, 1, 2, 2)
+n <- length(X)
+B <- 10000
+
+tao_hat <- ((n-1)/n)^sum(X)
+
+tao_hat_star <- numeric(B)
+
+for(i in 1:B){
+  X_star <- sample(X, n, replace = TRUE)
+  tao_hat_star[i] <- ((n-1)/n)^sum(X_star)
+}
+
+mean_tao_hat_star <- mean(tao_hat_star)
+var_tao_hat_star <- var(tao_hat_star)
+
+alpha <- 0.05
+Intervalo <- quantile(tao_hat_star, c(alpha/2, 1-alpha/2))
+
+```
+
+Consideremos ahora a la siguiente muestra: {1,3,0,0,1,1,0,1,0,1,0,0,1,2,0,1,1,1,0,1,0,2,1,2,2}, y supongamos que haremos uso nuevamente del mismo estimador $\hat{\tau} = \frac{n-1}{n}^{\sum_{i=1}^{n} X_i}$ para estimar $\mathbb{P}(X = 0)$, de esta manera con el chunk de código [`Bootstrap`](Ejercicios/Ejercicio1.rmd) obtenemos los siguientes resultados:
+
+```{r label = "Histograma Bootstrap"}
+ggplot() + geom_histogram(mapping = aes(x = tao_hat_star), bins = 28, fill = PALETA[1]) + 
+  geom_vline(mapping = aes(xintercept = tao_hat, colour = "Valor real"), linetype = "dashed") +
+  geom_vline(mapping = aes(xintercept = mean_tao_hat_star, colour = "Media Bootstrap" ),linetype = "dashed") +
+  labs(x = TeX("$\\hat{\\tau}$"), y = "n", title = TeX("Histograma de \\hat{\\tau}(\\theta)"),colour = "") + 
+  scale_colour_manual(values = c("Media Bootstrap" = PALETA[4], "Valor real" = PALETA[6]))
+```
+
+```{r label = "Tabla Bootstrap"}
+kable(data.frame(Media = mean_tao_hat_star, Varianza = var_tao_hat_star), align = "c", format = "simple")
+```
+
+A pesar de que visualmente no obtenemos una media tan precisa como en el metodo de Monte Carlo, esta técnica resulta ser mas fuerte, pues solo tuvimos que hacer uso de una sola muestra, y las comparaciones las hacemos con respecto a algo que conocemos, sin embargo no nos confiemos, pues la muestra puede resultar ser engañosa y brindarnos intervalos de confianza que no contengan al valor real, para este caso obtenemos el siguiente intervalo de confianza:\footnote{El intervalo de confianza se obtiene a partir de los cuantiles de la distribución de $\hat{\tau}_B$}
+
+
+```{r label = "Intervalo Bootstrap"}
+kable(data.frame(Intervalo = Intervalo), align = "c", format="simple")
+```
+
+Por lo que nuestro intervalo no contiene al valor real, y por lo tanto uno supondría que no se puede confiar en la estimación, sin embargo esto es debido a la muestra y no al método, podemos comprobarlo al realizar 1000 veces este proceso con diferentes muestras del mismo tamaño y ver si el porcentaje de intervalos de confianza que contienen al valor real es similar al nivel de confianza.
+
+<!--
+El desempeño del método bootstrap depende del tamaño de la muestra y de la muestra con la que se trabaja. En general, se puede estudiar su desempeño vía simulaciones. Por ejemplo, se puede analizar si los intervalos de confianza tienen la cobertura deseada como sigue. Repita el siguiente procedimiento M = 1000 veces.
+
+i) Genere n = 25 números aleatorios de una distribución Poisson(1.5)
+
+ii) Considerando el estimador \hat{\tao} = \frac{n-1}{n}^{\sum_{i=1}^{n} X_i}, dé un intervalo de confianza usando el método bootstrap no paramétrico con B = 10,000.
+
+iii) Defina una variable binaria Z, que vale 1 si el intervalo contiene al verdadero valor, es decir, a P(X = 0), 0 en otro caso.
+
+Calcule el promedio de la variable Z, ¿Se parece al nivel de confianza?. Comente considerando que si el desempeño es bueno, se espera que el porcentaje de intervalos de confianza que contienen al verdadero valor sea similar o mayor al nivel de confianza.
+-->
+
+```{r, Cobertura}
+inciso_c <- "bootsrapc.rds"
+if(file.exists(inciso_c)){
+  Z <- readRDS(inciso_c)
+}else{
+  set.seed(123)
+  M <- 1000
+  n <- 25
+  B <- 10000
+  theta <- 1.5
+  alpha <- 0.05
+  valor_verdadero <- dpois(0,theta)
+  Z <- numeric(M)
+  
+  for(i in 1:M){
+  
+    X<- rpois(n, theta)
+    tao_hat_star <- numeric(B)
+    
+    for(j in 1:B){
+      X_star <- sample(X, n, replace = TRUE)
+      tao_hat_star[j] <- ((n-1)/n)^sum(X_star)
+    }
+    
+    q1 <- quantile(tao_hat_star, alpha/2)
+    q2 <- quantile(tao_hat_star, 1-alpha/2)
+    
+    Z[i] <- as.numeric(q1 <= valor_verdadero & valor_verdadero <= q2)
+  }
+  saveRDS(Z, file = "bootsrapc.rds")
+}
+```
+
+Así al realizar lo ya comentado sobre la sección de código [`Cobertura`](Ejercicios/Ejercicio1.rmd) obtenemos que el promedio de la variable $Z$, donde $Z$ es la cantidad de intervalos de confianza que contienen al valor real es: $0.938$, esto para un intervalo de confianza del $95\%$, por lo que el método no resulta malo, sino que depende de la muestra con la que se trabaje.
+
+\newpage

@@ -1,0 +1,477 @@
+```{r}
+library(knitr)
+library(foreign)
+library(survival)
+library(KMsurv)
+library(nlme)
+library(muhaz)
+library(TH.data)
+library(ggplot2)
+library(ggfortify)
+library(proto)
+library(GGally)
+
+aids <- read.csv("AIDS_ClinicalTrial_GroupStudy175.csv")
+head(aids)
+dim(aids)
+attach(aids)
+#Cpmvirtieno la variables categoricas en factores
+aids$trt <- factor(aids$trt, 
+                   levels = c(0, 1, 2, 3), 
+                   labels = c("Solo ZDV", "ZDV+DDL", "ZDV+Sal", "DDL"))
+aids$gender <- as.factor(aids$gender)
+aids$race <- as.factor(aids$race)
+aids$drugs <- as.factor(aids$drugs)
+aids$cd40 <- as.numeric(aids$cd40)
+aids$homo <- as.factor(aids$homo)
+aids$hemo <- as.factor(aids$hemo)
+aids$time <- as.numeric(aids$time)
+aids$offtrt <- factor(aids$offtrt,
+                      levels = c(0, 1),
+                      labels = c("Con tratamiento previo", "Sin tratamiento previo"))
+aids$symptom <- factor(aids$symptom,
+                       levels = c(0, 1),
+                       labels = c("Asintomatico", "Con sintomas"))
+aids$z30 <- factor(aids$z30,
+                   levels = c(0, 1),
+                   labels = c("Sin ZDV en último mes", "Con ZDV último mes"))
+aids$str2 <- factor(aids$str2,
+                    levels = c(0, 1),
+                    labels = c("Sin historia antiretroviral", "Experimentado"))
+aids$age <- as.numeric(aids$age)
+aids$age <- cut(aids$age, breaks=c(10,20,30,40,50,60,70), labels=c("10-20", "21-30", "31-40", "41-50", "51-60", "61-70"))
+aids$cd40 <- cut(aids$cd40, breaks=c(0,200,500,1200), labels=c("0-200", "201-500", "501-1200"))
+#Variable karnof la categorizamos en 3 categorias: 0-80, 81-90, 91-100
+aids$karnof <- cut(aids$karnof, breaks=c(0,80,90,100), labels=c("0-80", "81-90", "91-100"))
+#Variable wtkg la categorizamos en 3 categorias: 0-60, 61-90, 91-160
+aids$wtkg <- cut(aids$wtkg, breaks=c(0,60,90,160), labels=c("0-60", "61-90", "91-160"))
+aids$preanti <- cut(aids$preanti, breaks=c(0,142,739,2851), labels=c("0-142", "143-739", "740-2851"))
+aids$cd80 <- as.numeric(aids$cd80)
+#cd80 categorizamos en 40-654, 655-893, 894-1207, 1208-5012
+aids$cd80 <- cut(aids$cd80, breaks=c(40,654,893,1207,5012), labels=c("40-654", "655-893", "894-1207", "1208-5012"))
+aids$cd420 <- as.numeric(aids$cd420)
+#cd420 categorizamos en 49-269, 270-353, 354-460, 460-1119
+aids$cd420 <- cut(aids$cd420, breaks=c(49,269,353,460,1119), labels=c("49-269", "270-353", "354-460", "460-1119"))
+aids$cd820 <- as.numeric(aids$cd820)
+#cd820 categorizamos en 124-631, 632-865, 866-1146, 1147-6035
+aids$cd820 <- cut(aids$cd820, breaks=c(124,631,865,1146,6035), labels=c("124-631", "632-865", "866-1146", "1147-6035"))
+```
+
+<!--
+2. Realice un an ́alisis descriptivo sobre el tiempo de supervivencia de los sujetos, adem ́as de sus
+caracter ́ısticas generales y particulares.
+-->
+# Análisis descriptivo
+```{r}
+summary(aids)
+```
+
+
+
+A continuación se presentan los histogramas de la variable tiempo, donde se ve que la mayoría de los pacientes sobreviven hasta los 1000 días, y los boxplots de la variable tiempo por tratamiento, síntomas, offtrt, karnof, str2, cd40, strat, cd80, cd420 y cd820. En el caso de los boxplots, se observa que los pacientes que recibieron tratamiento ZDV+Sal tienen una mayor supervivencia, los pacientes con síntomas tienen una menor supervivencia, los pacientes con tratamiento previo tienen una menor supervivencia, los pacientes con karnof 91-100 tienen una mayor supervivencia, los pacientes con sin historia antiretrovrial tienen una mayor supervivencia, los pacientes con cd40 0-200 tienen una mmenor supervivencia.
+```{r}
+#Histograma de la variable tiempo
+# Histograma personalizado
+hist(
+  aids$time, 
+  main = "Histograma de la variable Tiempo", 
+  xlab = "Tiempo (días)", 
+  ylab = "Frecuencia", 
+  col = "steelblue",    # Color de relleno de las barras
+  border = "white",     # Bordes blancos para las barras
+  breaks = 20,          # Más divisiones en las barras
+  las = 1,              # Rotar etiquetas del eje Y
+  cex.main = 1.5,       # Tamaño del título
+  cex.lab = 1.2,        # Tamaño de etiquetas de los ejes
+  cex.axis = 1          # Tamaño de números en los ejes
+)
+
+# Añadir una cuadrícula al fondo
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted")
+
+```
+
+
+
+
+
+```{r}
+#Tiempo de supervivencia por tratamiento, solo 0=ZDV, 1=ZDV+DDL, 2=ZDV+Sal, 3=Solo DDL
+# Boxplot personalizado para 4 tratamientos
+boxplot(
+  time ~ trt, 
+  data = aids, 
+  main = "Tiempo de Supervivencia por Tratamiento", 
+  xlab = "Tratamiento", 
+  ylab = "Tiempo (días)", 
+  col = c("lightblue", "lightgreen", "lightpink", "lightyellow"), # Colores para cada tratamiento
+  border = "darkblue",                 # Bordes oscuros
+  notch = TRUE,                        # Muescas para comparar medianas
+  las = 1,                             # Etiquetas del eje Y horizontales
+  cex.main = 1.5,                      # Tamaño del título
+  cex.lab = 1.2,                       # Tamaño de etiquetas de los ejes
+  cex.axis = 1                         # Tamaño de números en los ejes
+)
+
+# Añadir una cuadrícula al fondo
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted")
+
+```
+
+```{r}
+#Tiempo de supervivencia por symptom
+boxplot(time~symptom, data=aids, main="Tiempo de supervivencia por síntomas", xlab="Síntomas", ylab="Tiempo")
+```
+
+```{r}
+#Tiempo de supervivencia por offtrt
+# Boxplot para variable categórica
+boxplot(
+  time ~ offtrt, 
+  data = aids, 
+  main = "Tiempo de Supervivencia por Estado de Offtrt", 
+  xlab = "Estado de Offtrt", 
+  ylab = "Tiempo (días)", 
+  col = c("lightblue", "lightgreen"),  # Colores para los niveles
+  border = "darkblue",                 # Bordes oscuros
+  notch = TRUE,                        # Muescas para comparar medianas
+  las = 1,                             # Etiquetas del eje Y horizontales
+  cex.main = 1.5,                      # Tamaño del título
+  cex.lab = 1.2,                       # Tamaño de etiquetas de los ejes
+  cex.axis = 1                         # Tamaño de números en los ejes
+)
+
+# Añadir cuadrícula al fondo
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted")
+
+```
+
+
+```{r}
+#Tiempo de supervivencia por karnof
+boxplot(time~karnof, data=aids, main="Tiempo de supervivencia por karnof", xlab="Karnof", ylab="Tiempo")
+```
+
+
+
+
+
+```{r}
+#Tiempo de supervivencia por str2
+boxplot(time~str2, data=aids, main="Tiempo de supervivencia por str2", xlab="str2", ylab="Tiempo")
+
+```
+
+```{r}
+#Tiempo de supervivencia por cd40
+#la partición fue hecha asó porque <200 es paciente grave, 500-1200 es persona sana y 200-500 es gris
+# Boxplot personalizado para 3 niveles de CD40
+boxplot(
+  time ~ cd40, 
+  data = aids, 
+  main = "Tiempo de Supervivencia por Niveles de CD40", 
+  xlab = "Niveles de CD40", 
+  ylab = "Tiempo (días)", 
+  col = c("lightblue", "lightgreen", "lightpink"), # Colores para cada nivel
+  border = "darkblue",                            # Bordes oscuros
+  notch = TRUE,                                   # Muescas para comparar medianas
+  las = 1,                                        # Etiquetas del eje Y horizontales
+  cex.main = 1.5,                                 # Tamaño del título
+  cex.lab = 1.2,                                  # Tamaño de etiquetas de los ejes
+  cex.axis = 1                                    # Tamaño de números en los ejes
+)
+
+# Añadir una cuadrícula al fondo
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted")
+
+```
+
+```{r eval=FALSE, include=FALSE}
+#Tiempo de supervivencia por strat
+boxplot(time~strat, data=aids, main="Tiempo de supervivencia por strat", xlab="strat", ylab="Tiempo")
+```
+
+
+```{r}
+#Veamos estimador de kaplan meier
+ajuste <- survfit(Surv(time, label)~1, type = "kaplan-meier", conf.type="log", conf.int=0.95, data=aids)
+
+plot(ajuste,conf.int=T,main="Estimador Kaplan-Meier",
+xlab="tiempo", ylab=expression(hat(S)(t)), col="blue", col.main="darkred", col.lab="darkred")
+#Vemos que tenemos muchas censuras, pero que la supervivencia solo decrece de manera pronunciada hasta después de 2 años
+```
+
+```{r}
+comp1 <- survfit(Surv(time,label)~factor(treat),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), main = "Comparación de Supervivencia por Tratamiento")
+legend("topright", legend = c("Solo ZDV", "Otros"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), cex = 0.7)
+#Aparentemente, pacientes con otros tramtamientos sobreviven más
+```
+```{r}
+#Comparacion supervivencia por symptom
+comp1 <- survfit(Surv(time,label)~factor(symptom),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), main = "Comparación de Supervivencia por Sintomas")
+legend("topright", legend = c("Asintomatico", "Con sintomas"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), cex = 0.7)
+```
+```{r}
+#Comparacion supervivencia por karnof
+comp1 <- survfit(Surv(time,label)~factor(karnof),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62","yellow"), main
+= "Comparación de Supervivencia por Karnof")
+legend("topright", legend = c("0-80", "81-90", "91-100"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62", "yellow"), cex = 0.7)
+
+#Pacientes con karnof 91-100 sobreviven más
+```
+```{r}
+#Comparacion supervivencia por offtrt
+comp1 <- survfit(Surv(time,label)~factor(offtrt),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), main
+= "Comparación de Supervivencia por offtrt")
+legend("topright", legend = c("Con tratamiento previo", "Sin tratamiento previo"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), cex = 0.7)
+#Pacientes con tratamiento previo sobreviven menos
+```
+```{r}
+comp1 <- survfit(Surv(time,label)~factor(z30),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), main
+= "Comparación de Supervivencia por z30")
+legend("topright", legend = c("Sin ZDV en último mes", "Con ZDV último mes"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), cex = 0.7)
+```
+
+
+
+
+
+```{r}
+table(aids$label)
+```
+
+
+
+```{r}
+comp2 <- survfit(Surv(time,label)~factor(str2),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp2, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), main = "Comparación de Supervivencia por str2")
+legend("topright", legend = c("Sin historia antiretroviral", "Experimentado"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62"), cex = 0.7)
+```
+
+```{r}
+#Comparacion supervivencia por karnof
+comp1 <- survfit(Surv(time,label)~factor(trt),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+  col = c("#66CDAA", "#8B1C62","yellow", "red"), main
+= "Comparación de Supervivencia por tratamiento")
+legend("bottomright", legend = c("SOLO ZDV", "ZDV+DDL", "ZDV+Sal", "Solo DDL"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62", "yellow", "red"), cex = 0.7)
+```
+```{r}
+#Comparacion supervivencia por karnof
+comp1 <- survfit(Surv(time,label)~factor(cd40),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+  col = c("#66CDAA", "#8B1C62","yellow"), main
+= "Comparación de Supervivencia por c40")
+legend("topright", legend = c("0-200", "201-500", "501-1200"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62", "yellow"), cex = 0.7)
+```
+
+```{r eval=FALSE, include=FALSE}
+#Comparacion supervivencia por cd80
+comp1 <- survfit(Surv(time,label)~factor(cd80),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+  col = c("#66CDAA", "#8B1C62","yellow", "red"), main
+= "Comparación de Supervivencia por c80")
+legend("bottomright", legend = c("40-654", "655-893", "894-1207", "1208-5012"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62", "yellow", "red"), cex = 0.7)
+```
+```{r eval=FALSE, include=FALSE}
+comp1 <- survfit(Surv(time,label)~factor(strat),type = "kaplan-meier",conf.type="plain",data=aids)
+plot(comp1, conf.int = TRUE, xlab = "Tiempo", ylab = "Supervivencia", lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62","yellow"), main
+= "Comparación de Supervivencia por strat")
+legend("bottomright", legend = c("Sin antirretroviral", "Menos de 1 año de antirretroviral", "Más de un año de retroviral"), lty = c(1, 2),
+col = c("#66CDAA", "#8B1C62", "yellow"), cex = 0.7)
+```
+
+
+<!--
+Si eval=False, no se rechaza que el tiempo sea el mismo
+-->
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$gender, rho = 0, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$race, rho = 0, data = aids)
+```
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$drugs, rho = 0, data = aids)
+```
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$homo, rho = 0, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$wtkg, rho = 0, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$hemo, rho = 0, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$age, rho = 0, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$oprior, rho = 1, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+survdiff(Surv(aids$time, aids$label) ~ aids$preanti, rho = 0, data = aids)
+```
+
+```{r eval=FALSE, include=FALSE}
+#cd820 prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$cd820, rho = 0, data = aids)
+```
+
+
+```{r}
+survdiff(Surv(aids$time, aids$label) ~ aids$karnof, rho = 0, data = aids)
+```
+
+```{r}
+survdiff(Surv(aids$time, aids$label) ~ aids$symptom, rho = 0, data = aids)
+```
+
+
+```{r}
+survdiff(Surv(aids$time, aids$label) ~ aids$trt, rho = 0, data = aids)
+```
+
+
+
+
+
+```{r}
+#z30 prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$z30, rho = 1, data = aids)
+```
+
+
+
+
+
+```{r}
+#strat prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$strat, rho = 1, data = aids)
+```
+```{r}
+#str2 prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$str2, rho = 1, data = aids)
+```
+
+
+```{r}
+#offtrt prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$offtrt, rho = 1, data = aids)
+```
+
+
+
+```{r}
+#cd40 prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$cd40, rho = 0, data = aids)
+```
+
+
+
+```{r}
+#cd80 prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$cd80, rho = 0, data = aids)
+```
+
+
+
+
+
+```{r}
+#cd420 prueba
+survdiff(Surv(aids$time, aids$label) ~ aids$cd420, rho = 0, data = aids)
+```
+
+
+
+
+
+
+
+```{r}
+coxph(Surv(time,label)~str2)
+```
+```{r}
+attach(aids)
+```
+
+
+```{r}
+modelo <- coxph(Surv(time,label)~I(karnof=="91-100")+offtrt+str2+treat+I(cd40=="0-200")+symptom+z30+cd420+cd80)
+summary(modelo)
+```
+
+
+```{r}
+rpgof <- cox.zph(modelo)
+print(rpgof)
+plot(rpgof,cex=10,lwd=5,pch=23)
+```
+
+
+```{r}
+cs.res <- label-resid(modelo,type="martingale")
+
+gofcs<-survfit(coxph(Surv(cs.res,label)~1),type="kaplan-meier")
+
+plot(gofcs$time,-log(gofcs$surv),type='s',xlab="Residuos Cox-Snell", ylab="Riesgo acumulado",main="Bondad de ajuste PH",col.main="blue",col.lab="magenta",lwd=5)
+abline(0,1,col='red',lty=2,lwd=5)
+
+1-pexp(max(cs.res),1)
+
+```
+
+```{r}
+schoenfel.res <- residuals(modelo,type="schoenfeld")
+covariables <- colnames(schoenfel.res)
+par(mfrow=c(2,2))
+for (cov in covariables){
+plot(schoenfel.res[,cov],
+xlab=cov,
+ylab="Residuos de Schoenfeld",
+main=paste("Schoenfeld vs ", cov),
+pch=19, col="blue")
+abline(h=0, col="red", lty=2)
+}
+```
+
+
+```{r}
+#Filtrar con aquellos pacientes con riesgo más alto, i. e., con sintomas, con cd40 0-200, con karnof 0-90, csin tratamiento previo, con str2 experimentado y con z30 con ZDV en el último mes
+aids2 <- aids[aids$symptom=="Con sintomas" & aids$cd40=="0-200" & aids$offtrt=="Sin tratamiento previo"  ,]
+```
+
+```{r}
+#graficamos supervivencia
+ajuste2 <- survfit(Surv(time, label)~1, type = "kaplan-meier", conf.type="log", conf.int=0.95, data=aids2)
+plot(ajuste2,conf.int=T,main="Estimador Kaplan-Meier", xlab="tiempo", ylab=expression(hat(S)(t)), col="blue", col.main="darkred", col.lab="darkred")
+```
+

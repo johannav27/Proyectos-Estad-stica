@@ -1,0 +1,493 @@
+
+
+<!--
+Considere la base de datos PimaIndiansDiabetes2 del paquete mlbench, sólo las observaciones con respuesta
+en todas las variables. Suponga que el objetivo del estudio es usar las ocho variables clínicas observadas en
+las pacientes para estudiar cuáles de éstas, adicionales o en lugar de la variable glucose, son los factores que
+ayudan a modelar mejor la probabilidad de presentar o no diabetes (var diabetes).
+-->
+```{r, include=FALSE}
+#Cargamos la base de datos
+data(PimaIndiansDiabetes2, package = "mlbench")
+#Quitamos observaciones con NA
+PimaIndiansDiabetes2 <- PimaIndiansDiabetes2[complete.cases(PimaIndiansDiabetes2),]
+str(PimaIndiansDiabetes2)
+summary(PimaIndiansDiabetes2)
+```
+<!--
+i. Considere un modelo para datos binarios con liga logit. Realice una selección de variables considerando
+sólo los efectos principales de las variables y usando: a) mejor subconjunto, b) un método stepwise y
+c) método lasso. En cada caso, presente el mejor modelo obtenido usando el criterio BIC.
+-->
+```{r include=FALSE}
+#Modelo logit
+modelo_logit <- glm(diabetes ~ ., data = PimaIndiansDiabetes2, family = binomial("logit"))
+summary(modelo_logit)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2, family = binomial("logit"))
+
+#usando la función stepAIC con el criterio BIC
+modelo_step <- stepAIC(modelo_aux, scope = list(lower = modelo_aux, upper = modelo_logit), direction = "forward", trace = 0, k = log(dim(PimaIndiansDiabetes2)[1]))
+summary(modelo_step)
+BIC(modelo_step)
+#BIC=377.0913
+#Variables=mass, age, pedigree y glucose
+```
+
+```{r, include=FALSE}
+#Usando mejor subconjunto, bestglm y BIC
+mejor_subconjunto <- bestglm(PimaIndiansDiabetes2, IC = "BIC", family = binomial("logit"), method = "exhaustive")
+summary(mejor_subconjunto$BestModel)
+BIC(mejor_subconjunto$BestModel)
+```
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X <- model.matrix(diabetes ~ ., data = PimaIndiansDiabetes2)[,-1]
+Y <- as.numeric(PimaIndiansDiabetes2$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet <- glmnet(X, Y, family = binomial("logit"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet$relaxed)
+```
+
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet$relaxed$nulldev)-fit2.glmnet$relaxed$nulldev * (1 - fit2.glmnet$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet$relaxed)[,MinBICfit2]
+#Mismo que en best subset y stepwise
+```
+Tenemos la base de datos PimaIndiansDiabetes2, con 392 observaciones y 9 variables, de donde se eliminaron las observaciones con NA.
+El objetivo es ver cuáles variables nos ayudan a determinar la probabilidad de presentar diabetes. Notamos que la variable más importante para este estudio es glucose, podemos ver la correlación en la siguiente box-plot:
+
+```{r echo=FALSE, fig.dim=c(10,4)}
+ggplot(PimaIndiansDiabetes2, aes(x = diabetes, y = glucose, fill = diabetes)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 2, alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +  # Colores suaves
+  theme_minimal(base_size = 14) +  # Fuente más grande para mejor visibilidad
+  labs(
+    title = "Distribución de Glucosa por Presencia de Diabetes",
+    x = "Diabetes (Sí/No)",
+    y = "Nivel de Glucosa",
+    fill = "Diabetes"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "top",
+    legend.title = element_text(face = "italic"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+```
+
+El objetivo de este estudio es usar las ocho variables clínicas observadas en los pacientes para estudiar cuáles de éstas, adicionales o en lugar de la variable glucose, son los factores que ayudan a modelar mejor la probabilidad de presentar o no diabetes. Para ello, se consideró un modelo logit, con efectos principales de las variables, de donde obtuvimos los resultados siguientes:
+
+| Método              | Modelo                                    | BIC    |
+|---------------------|-------------------------------------------|--------|
+| Mejor subconjunto   | diabetes ~ glucose +age + mass + pedigree | 377.09 |
+|  Stepwise (Forward) | diabetes ~ glucose +age + mass + pedigree | 377.09 |
+| Lasso               | diabetes ~ glucose +age + mass + pedigree | 377.09 |
+
+En todos los casos, se obtuvo el mismo modelo, con las variables glucose, age, mass y pedigree, con un BIC de 377.09.
+
+<!--
+ii. Considere un modelo para datos binarios con liga logit. Realice una selección de variables considerando
+en el modelo los efectos principales de las variables, así como su interacción y el cuadrado de las
+variables, sólo considerando: a) un método stepwise y b) método lasso. En cada caso, presente el mejor
+modelo obtenido usando el criterio BIC.
+-->
+```{r, include=FALSE}
+#Modelo logit, con interacciones y cada variable al cuadrado
+modelo_logit2 <- glm(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2, family = binomial("logit"))
+summary(modelo_logit2)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux2 <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2, family = binomial("logit"))
+
+mod1 <- stepAIC(modelo_aux2, scope =list(upper = modelo_logit2, lower = modelo_aux2), trace =FALSE,direction="forward", k=log(dim(PimaIndiansDiabetes2)[1]))
+summary(mod1)
+BIC(mod1)
+#BIC=370.6345, variables: glucose, age, mass, pedigree y age^2
+```
+
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X2 <- model.matrix(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2)[,-1]
+Y2 <- as.numeric(PimaIndiansDiabetes2$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet2 <- glmnet(X2, Y2, family = binomial("logit"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet2)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet2$relaxed)
+```
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet2$relaxed$nulldev)-fit2.glmnet2$relaxed$nulldev * (1 - fit2.glmnet2$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet2$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet2$relaxed)[,MinBICfit2]
+```
+
+```{r, include=FALSE}
+modelo_lasso_2 <- glm(diabetes ~ glucose:age+glucose:mass+I(glucose^2), data = PimaIndiansDiabetes2, family = binomial("logit"))
+summary(modelo_lasso_2)
+BIC(modelo_lasso_2)
+#BIC=381.8993
+```
+Ahora, al considerar además de los efectos principales, las interacciones y cuadrados de las variables, se obtuvo un modelo diferente al usar lasso y stepwise, resumimos los resultados en la siguiente tabla:
+
+| Método              | Modelo                                               | BIC    |
+|---------------------|------------------------------------------------------|--------|
+| Lasso               | diabetes ~ glucose:age + glucose:mass + I(glucose^2) | 381.89 |
+|  Stepwise (Forward) | diabetes ~ glucose + age + mass + pedigree+I(age^2)  | 370.63 |
+
+En este caso, el mejor modelo obtenido con el criterio BIC fue el obtenido con stepwise, con un BIC de 370.63, con las variables glucose, age, mass, pedigree y age^2.
+
+<!--
+iii. Considere posibles modificaciones a los incisos i) y ii) realizando lo siguiente. A) usar ligas probit o
+cloglog; B) usar el logaritmo como preprocesamiento a las variables. En cada caso, presente el mejor
+modelo obtenido usando el criterio BIC.
+-->
+<!-- Acá incisos i y ii con probit -->
+```{r include=FALSE}
+#Modelo probit
+modelo_probit <- glm(diabetes ~ ., data = PimaIndiansDiabetes2, family = binomial("probit"))
+summary(modelo_probit)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2, family = binomial("probit"))
+
+#usando la función stepAIC con el criterio BIC
+modelo_step <- stepAIC(modelo_aux, scope = list(lower = modelo_aux, upper = modelo_probit), direction = "forward", trace = 0, k = log(dim(PimaIndiansDiabetes2)[1]))
+summary(modelo_step)
+BIC(modelo_step)
+#BIC = 378.06, variables glucose, age y mass
+```
+
+```{r, include=FALSE}
+#Usando mejor subconjunto, bestglm y BIC
+mejor_subconjunto <- bestglm(PimaIndiansDiabetes2, IC = "BIC", family = binomial("probit"), method = "exhaustive")
+summary(mejor_subconjunto$BestModel)
+BIC(mejor_subconjunto$BestModel)
+#Mismo que arriba, BIC=378.06, variables glucose, age y mass
+```
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X <- model.matrix(diabetes ~ ., data = PimaIndiansDiabetes2)[,-1]
+Y <- as.numeric(PimaIndiansDiabetes2$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet <- glmnet(X, Y, family = binomial("probit"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet$relaxed)
+```
+
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet$relaxed$nulldev)-fit2.glmnet$relaxed$nulldev * (1 - fit2.glmnet$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet$relaxed)[,MinBICfit2]
+#Mismo que arriba, BIC=378.06, variables glucose, age y mass
+```
+
+```{r, include=FALSE}
+#Modelo probit, con interacciones y cada variable al cuadrado
+modelo_probit2 <- glm(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2, family = binomial("probit"))
+summary(modelo_probit2)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux2 <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2, family = binomial("probit"))
+
+mod1 <- stepAIC(modelo_aux2, scope =list(upper = modelo_probit2, lower = modelo_aux2), trace =FALSE,direction="forward", k=log(dim(PimaIndiansDiabetes2)[1]))
+summary(mod1)
+BIC(mod1)
+#BIC=371.248, variables glucose, age, mass, pedigree y age^2
+```
+
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X2 <- model.matrix(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2)[,-1]
+Y2 <- as.numeric(PimaIndiansDiabetes2$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet2 <- glmnet(X2, Y2, family = binomial("probit"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet2)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet2$relaxed)
+```
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet2$relaxed$nulldev)-fit2.glmnet2$relaxed$nulldev * (1 - fit2.glmnet2$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet2$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet2$relaxed)[,MinBICfit2]
+```
+
+```{r, include=FALSE}
+modelo_lasso_2 <- glm(diabetes ~ I(glucose*age)+I(glucose*mass)+I(glucose^2), data = PimaIndiansDiabetes2, family = binomial("probit"))
+summary(modelo_lasso_2)
+BIC(modelo_lasso_2)
+#BIC=382.0229, variables glucose:age, glucose:mass y glucose^2
+```
+
+
+
+<!-- Acá incisos i y ii con cloglog -->
+```{r include=FALSE}
+#Modelo cloglog
+modelo_cloglog <- glm(diabetes ~ ., data = PimaIndiansDiabetes2, family = binomial("cloglog"))
+summary(modelo_cloglog)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2, family = binomial("cloglog"))
+
+#usando la función stepAIC con el criterio BIC
+modelo_step <- stepAIC(modelo_aux, scope = list(lower = modelo_aux, upper = modelo_cloglog), direction = "forward", trace = 0, k = log(dim(PimaIndiansDiabetes2)[1]))
+summary(modelo_step)
+BIC(modelo_step)
+#BIC=387.94, variablesglucose, triceps y age
+```
+
+```{r, include=FALSE}
+#Usando mejor subconjunto, bestglm y BIC
+mejor_subconjunto <- bestglm(PimaIndiansDiabetes2, IC = "BIC", family = binomial("cloglog"), method = "exhaustive")
+summary(mejor_subconjunto$BestModel)
+BIC(mejor_subconjunto$BestModel)
+#BIC=385.65,  variablespregnant, glucose y mass
+```
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X <- model.matrix(diabetes ~ ., data = PimaIndiansDiabetes2)[,-1]
+Y <- as.numeric(PimaIndiansDiabetes2$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet <- glmnet(X, Y, family = binomial("cloglog"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet$relaxed)
+```
+
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet$relaxed$nulldev)-fit2.glmnet$relaxed$nulldev * (1 - fit2.glmnet$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet$relaxed)[,MinBICfit2]
+#Salieron glucose, mass y age
+modelo_lasso_cloglog <- glm(diabetes ~ glucose+mass+age, data = PimaIndiansDiabetes2, family = binomial("cloglog"))
+summary(modelo_lasso_cloglog)
+BIC(modelo_lasso_cloglog)
+#BIC=386.68
+```
+
+```{r, include=FALSE}
+#Modelo cloglog, con interacciones y cada variable al cuadrado
+modelo_cloglog2 <- glm(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2, family = binomial("cloglog"))
+summary(modelo_cloglog2)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux2 <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2, family = binomial("cloglog"))
+
+mod1 <- stepAIC(modelo_aux2, scope =list(upper = modelo_cloglog2, lower = modelo_aux2), trace =FALSE,direction="forward", k=log(dim(PimaIndiansDiabetes2)[1]))
+summary(mod1)
+BIC(mod1)
+#BIC=386.07, variables glucose, mass y pregnant^2
+```
+
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X2 <- model.matrix(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2)[,-1]
+Y2 <- as.numeric(PimaIndiansDiabetes2$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet2 <- glmnet(X2, Y2, family = binomial("cloglog"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet2)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet2$relaxed)
+```
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet2$relaxed$nulldev)-fit2.glmnet2$relaxed$nulldev * (1 - fit2.glmnet2$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet2$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet2$relaxed)[,MinBICfit2]
+```
+
+```{r, include=FALSE}
+modelo_lasso_2 <- glm(diabetes ~ I(glucose*age)+I(glucose*mass)+I(glucose^2), data = PimaIndiansDiabetes2, family = binomial("cloglog"))
+summary(modelo_lasso_2)
+BIC(modelo_lasso_2)
+#BIC=394.11, variables glucose:age, glucose:mass y glucose^2
+```
+
+
+<!-- Acá incisos i y ii con logaritmo -->
+```{r include=FALSE}
+#Consideramos otro dataframe con datos en escala logarítmica
+PimaIndiansDiabetes2_log <- PimaIndiansDiabetes2
+#en la variable pregnant se suma 1 a cada valor para evitar 0's
+PimaIndiansDiabetes2_log$pregnant <- log(PimaIndiansDiabetes2$pregnant+1)
+PimaIndiansDiabetes2_log$glucose <- log(PimaIndiansDiabetes2$glucose)
+PimaIndiansDiabetes2_log$pressure <- log(PimaIndiansDiabetes2$pressure)
+PimaIndiansDiabetes2_log$triceps <- log(PimaIndiansDiabetes2$triceps)
+PimaIndiansDiabetes2_log$insulin <- log(PimaIndiansDiabetes2$insulin)
+PimaIndiansDiabetes2_log$mass <- log(PimaIndiansDiabetes2$mass)
+PimaIndiansDiabetes2_log$pedigree <- log(PimaIndiansDiabetes2$pedigree)
+PimaIndiansDiabetes2_log$age <- log(PimaIndiansDiabetes2$age)
+```
+
+```{r include=FALSE}
+#Modelo logit
+modelo_logit <- glm(diabetes ~ ., data = PimaIndiansDiabetes2_log, family = binomial("logit"))
+summary(modelo_logit)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2_log, family = binomial("logit"))
+
+#usando la función stepAIC con el criterio BIC
+modelo_step <- stepAIC(modelo_aux, scope = list(lower = modelo_aux, upper = modelo_logit), direction = "forward", trace = 0, k = log(dim(PimaIndiansDiabetes2_log)[1]))
+summary(modelo_step)
+BIC(modelo_step)
+#BIC=369.88, variables log(glucose), log(age), log(mass) y log(pedigree)
+```
+
+```{r, include=FALSE}
+#Usando mejor subconjunto, bestglm y BIC
+mejor_subconjunto <- bestglm(PimaIndiansDiabetes2_log, IC = "BIC", family = binomial("logit"), method = "exhaustive")
+summary(mejor_subconjunto$BestModel)
+BIC(mejor_subconjunto$BestModel)
+#Mismo que arriba, BIC=369.88, variables log(glucose), log(age), log(mass) y log(pedigree)
+```
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X <- model.matrix(diabetes ~ ., data = PimaIndiansDiabetes2_log)[,-1]
+Y <- as.numeric(PimaIndiansDiabetes2_log$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet <- glmnet(X, Y, family = binomial("logit"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet$relaxed)
+```
+
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet$relaxed$nulldev)-fit2.glmnet$relaxed$nulldev * (1 - fit2.glmnet$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet$relaxed)[,MinBICfit2]
+#Salió el mismo modelo que en best subset, stepwise y lasso
+#BIC=369.88, variables log(glucose), log(age), log(mass) y log(pedigree)
+```
+
+```{r, include=FALSE}
+#Modelo logit, con interacciones y cada variable al cuadrado
+modelo_logit2 <- glm(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2_log, family = binomial("logit"))
+summary(modelo_logit2)
+# modelo auxiliar (nulo, para empezar con selecci?n forward)
+modelo_aux2 <- glm(diabetes ~ 1, data = PimaIndiansDiabetes2_log, family = binomial("logit"))
+
+mod1_mejor <- stepAIC(modelo_aux2, scope =list(upper = modelo_logit2, lower = modelo_aux2), trace =FALSE,direction="forward", k=log(dim(PimaIndiansDiabetes2_log)[1]))
+summary(mod1_mejor)
+BIC(mod1_mejor)
+#BIC=367.96, variables log(glucose)^2, log(age), log(mass), log(pedigree), log(age)^2. Mejor modelo.
+```
+
+
+```{r, include=FALSE}
+#Usando lasso, primero obtenemos matriz diseño
+X2 <- model.matrix(diabetes ~ .^2+I(pregnant^2)+I(glucose^2)+I(pressure^2)+I(triceps^2)+I(insulin^2)+I(mass^2)+I(pedigree^2)+I(age^2), data = PimaIndiansDiabetes2_log)[,-1]
+Y2 <- as.numeric(PimaIndiansDiabetes2_log$diabetes) - 1
+#Lasso, usando relax= TRUE, 200 valores para lambda y glmnet
+fit2.glmnet2 <- glmnet(X2, Y2, family = binomial("logit"), nlambda = 400, relax = TRUE)
+print(fit2.glmnet2)
+#Se guardan dos resultados, los de lasso y los EMV
+coef(fit2.glmnet2$relaxed)
+```
+
+```{r, include=FALSE}
+#Se obtiene el mejor modelo de lasso, usando BIC
+#Calculamos el BIC de ese modelo
+BICfit2=-((fit2.glmnet2$relaxed$nulldev)-fit2.glmnet2$relaxed$nulldev * (1 - fit2.glmnet2$relaxed$dev.ratio))+log(dim(PimaIndiansDiabetes2)[1])*fit2.glmnet2$relaxed$df
+MinBICfit2=which.min(BICfit2)
+coef(fit2.glmnet2$relaxed)[,MinBICfit2]
+```
+
+```{r, include=FALSE}
+modelo_lasso_2 <- glm(diabetes ~ I(glucose*age)+I(glucose*mass)+I(glucose^2)+pedigree, data = PimaIndiansDiabetes2, family = binomial("probit"))
+summary(modelo_lasso_2)
+BIC(modelo_lasso_2)
+#BIC=382.35, variables log(glucose):log(age), log(glucose):log(mass), log(glucose)^2 y pedigree
+```
+
+Ahora intentaremos realizar modificaciones a los modelos ya hechos, considerando ligas probit o cloglog, así como el logaritmo como preprocesamiento a las variables. En donde los mejores modelos para cada caso son los siguientes:
+
+| Método                  | Modelo                                                           | BIC    |
+|-------------------------|------------------------------------------------------------------|--------|
+|  Stepwise, liga cloglog | diabetes ~ mass + glucose + I(pregnant^2)                        | 386.07 |
+|  Stepwise, liga probit  | diabetes ~ glucose + age + mass + pedigree+I(age^2)              | 371.24 |
+| Stepwise, logaritmo     | diabetes ~ log(glucose)^2 + log(age) + log(mass) + log(pedigree) | 367.96 |
+
+Ahora, de manera de resumen podemos presentar la siguiente tabla con los diferentes modelos obtenidos, para poder comentar sobre los resultados:
+
+| Método                     | Modelo                                                                                               | BIC    |
+|----------------------------|------------------------------------------------------------------------------------------------------|--------|
+| Mejor subconjunto, logit   | diabetes ~ glucose +age + mass + pedigree                                                            | 377.09 |
+| Lasso, liga logit          | diabetes ~ glucose:age + glucose:mass + glucose^2                                                    | 381.89 |
+|  Stepwise, liga logit      | diabetes ~ glucose + age + mass + pedigree+age^2                                                     | 370.73 |
+| Mejor subconjunto, probit  | diabetes ~ glucose + age + mass                                                                      | 378.06 |
+| Stepwise, liga probit      | diabetes ~ glucose + age + mass + pedigree + age^2                                                   | 371.24 |
+| Lasso, liga probit         | diabetes ~ glucose:age + glucose:mass + glucose^2                                                    | 382.02 |
+| Stepwise, liga cloglog     | diabetes ~ glucose + triceps + age                                                                   | 387.94 |
+| Mejor subconjunto, cloglog | diabetes ~ pregnant + glucose + mass                                                                 | 385.65 |
+| Stepwise, cloglog          | diabetes ~ glucose + mass + pregnant^2                                                               | 386.07 |
+| Lasso, cloglog             | diabetes ~ glucose:age + glucose:mass + glucose^2                                                    | 394.11 |
+| Mejor subconjunto, logit   | diabetes ~ log(glucose)+log(age) + log(mass) +            log(pedigree)                              | 369.88 |
+| Stepwise, logit            |  diabetes ~ log(glucose)^2 + log(age) + log(mass)             +log(pedigree) + log(age)^2            | 367.96 |
+| Lasso, logit               | diabetes ~ log(glucosa):log(age) + log(glucosa)^2+            log(glucosa):log(masa) + log(pedigree) | 382.35 |
+
+De donde vemos que en general las variables que más se repiten son glucose, age y mass, lo que nos indica que son las variables más importantes para determinar la probabilidad de presentar diabetes. Además, notamos que el uso de logaritmos como preprocesamiento a las variables sí mejora el modelo, ya que el mejor modelo obtenido con logaritmos tiene un BIC de 367.96, mientras que el mejor modelo sin logaritmos tiene un BIC de 369.88. Por otro lado, el mejor modelo obtenido sin liga logit tiene un BIC de 371.24, mientras que el mejor modelo obtenido con liga logit tiene un BIC de 367.96, lo que nos indica que la liga logit es la mejor para este caso. 
+Sobre las interacciones y cuadrados de las variables, notamos que en general no mejoran el modelo, ya que en los 3 modelos con mejor BIC, ninguno tiene interacciones.
+Ahora, concentrándonos en el mejor modelo, el cual tiene la forma siguiente:
+\begin{align*}
+logit(P(diabetes=pos))&=\beta_0+\beta_1log(glucose)^2+\beta_2log(age)+\beta_3log(mass)+\beta_4log(pedigree)+\beta_5log(age)^2
+\end{align*}
+Sobre la interpretación de algunos parámetros, notamos que el parámetro de glucose es el más importante, ya que un aumento en el nivel de glucosa aumenta la probabilidad de presentar diabetes. El parámetro de mass es positivo, lo que indica que un aumento en la masa corporal aumenta la probabilidad de presentar diabetes, lo mismo se aplicaría para el parámetro de pedigree. Esto debido a que la función logaritmo es creciente, y lo mismo con nuestra función liga logit.
+Esto lo podemos plantear con pruebas por hipótesis sobre $\beta_1$, $\beta_3$, $\beta_4$, para ver si son significativamente diferentes de 0. Para ello, planteamos las siguientes hipótesis con dirección:
+\begin{align*}
+H_0&:\beta_1\leq0\\
+H_1&:\beta_1>0
+\end{align*}
+\begin{align*}
+H_0&:\beta_3\leq0\\
+H_1&:\beta_3>0
+\end{align*}
+\begin{align*}
+H_0&:\beta_4\leq0\\
+H_1&:\beta_4>0
+\end{align*}
+
+```{r Pruebas de hipótesis 5, include=FALSE}
+#Prueba de hipótesis 1
+K=matrix(c(0,1,0,0,0,0), ncol=6, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(mod1_mejor, linfct=K, rhs=m, alternative = "greater"))
+#Prueba de hipótesis 2
+K=matrix(c(0,0,0,1,0,0), ncol=6, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(mod1_mejor, linfct=K, rhs=m, alternative = "greater"))
+#Prueba de hipótesis 3
+K=matrix(c(0,0,0,0,1,0), ncol=6, nrow=1, byrow=TRUE)
+m=c(0)
+summary(glht(mod1_mejor, linfct=K, rhs=m, alternative = "greater"))
+```
+Haciendo las 3 pruebas, se rechazan las hipótesis nulas, lo que nos indica que los parámetros de glucose, age y pedigree son mayores 0, lo que nos indica que un aumento en estas variables aumenta la probabilidad de presentar diabetes.
+
+

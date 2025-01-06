@@ -1,0 +1,187 @@
+---
+title: "Zurich monthly sunspot numbers 1749 - 1983"
+author: |
+  | Johan Jesús González Navarrete
+  | Andrés Limón Cruz
+  | Leonardo Cuauhtémoc Mendoza Granillo
+date: "`r Sys.Date()`"
+output: 
+  beamer_presentation:
+    theme: "metropolis"
+    fonttheme: "professionalfonts"
+    slide_level: 2
+---
+
+```{r setup, include=FALSE}
+#Limpiamos entorno
+rm(list = ls(all.names = TRUE))
+gc() #Liberamos memoria
+knitr::opts_chunk$set(
+	error = F,
+	fig.align = "center",
+	message = FALSE,
+	warning = FALSE,
+	fig.dim = c(4.5, 3)
+)
+options(rmarkdown.pdf_engine = "xelatex")
+#devtools::install_github("FinYang/tsdl")
+
+library(tidyverse)
+library(tsdl)
+library(seastests)
+library(lmtest)
+library(forecast)
+library(tseries)
+library(seastests)
+library(car)
+ts_20 <- tsdl[[20]]
+attributes(ts_20)
+
+theme_set(theme_minimal())
+PALETA <- c("#e9811bff")
+```
+
+## Sobre qué son los datos
+
+- La serie de tiempo Zurich monthly sunspot numbers 1749 - 1983 es una serie de tiempo que contiene la cantidad de manchas solares en el sol, la cual se ha recolectado desde 1749 hasta 1983.
+- El estudio de las manchas solares es importante para el estudio del clima y la meteorología. Ya que la cantidad de manchas solares en el sol afecta la cantidad de radiación solar que llega a la tierra.
+- Los datos no contienen valores faltantes por lo que no hace falta la imputación de datos.
+
+## Visualización de datos
+<!--
+Al graficar los datos podemos ver que la serie de tiempo parece no tener una varianza constante, una tendencia no constante y la gráfica pareciera sugerirnos una estacionalidad de 132 meses (11 años) (Nota: Lo cual tiene sentido, pues el periodo de manchas solares es de 11 años).
+-->
+
+```{r echo=FALSE}
+ggplot() +
+  geom_line(aes(x = time(ts_20), y = as.vector(ts_20)), colour = PALETA[1]) +
+  labs(title = "Zurich monthly sunspot numbers 1749 - 1983",
+       x = "Time",
+       y = "Sunspot number")
+```
+
+## Descomposición
+<!--
+Al usar la función decompose podemos ver que en efecto la tendencia no tiene una tendencia constante, y preciera que la misma tendencia en si tiene una estacionalidad de 11 años, por otro lado con respecto a la estacionalidad, esta grafica nos sugiere que la estacionalidad en realidad es anual, para eso lo comprobaremos con la función isSeasonal.
+-->
+
+```{r pressure, echo=FALSE}
+plot(decompose(ts_20), col = PALETA[1])
+```
+## Estacionalidad de la serie
+
+- Para hallar la estacionalidad de la serie de tiempo, primero la diferenciamos una vez para retirar la tendencia, y luego aplicamos la función `kw` para buscar evidencia en contra de la hipótesis nula de no estacionalidad con periodo igual a 12.
+
+```{r, echo=FALSE}
+wt <- diff(ts_20)
+kw(wt, freq = 12)
+```
+
+<!--
+Luego como se rechaza la hipótesis nula, tenemos evidencia en contra de que la serie no es estacional, por lo que existe evidencia de que la serie es estacional con periodo 12.
+-->
+## Ajuste de modelo SARIMA : ACF
+
+<!--
+-Para encontrar valores adecuados de p,q y P,Q usaremos el ACF y PACF de la serie de tiempo original, pues estos no consideran la forma extraña de nuestra tendencia.
+
+- Como existe un lag importante en el lag 12, podemos decir que Q = 1
+- En el PACF existen lags significativos en los lags 1, 2 y 3, por lo que podemos decir que p = 3
+-->
+
+```{r}
+par(mfrow = c(1, 2))
+acf(ts_20, lag.max = 3*11*12, col = PALETA[1])
+pacf(ts_20, lag.max = 3*11*12, col = PALETA[1])
+```
+## Primer modelo
+
+- De esta manera es que en un principio consideramos un modelo $\text{ARIMA}(0,1,3)\times(0,1,1)_{12}$
+
+```{r echo=TRUE}
+fit1<-arima(ts_20,order=c(0,1,3), 
+            seasonal=list(order=c(0,1,1), 
+            seasonal.periods=12))
+```
+
+De esto obtenemos los siguientes parametros.
+
+| Parámetro | Estimación | Error estándar |
+|-----------|------------|----------------|
+| `ma1`     | -0.407     | 0.019          |
+| `ma2`     | -0.119     | 0.0196         |
+| `ma3`     | -0.0052    | 0.0.0181       |
+| `sma1`    | -0.9940    | 0.0075         |
+
+## Ajustamos mas modelos
+
+- Sin embargo como el tercer termino del MA no es significativo, probamos con mas modelos similares, hasta llegar al modelo que tenga el menor AIC y que al agregarle mas parámetros solo lo aumentaría.
+
+```{r, echo=FALSE}
+# Usar esta celda si solo quieres ver el modelo y no tener que entrenarlo de nuevo
+load("fit5.RData")
+```
+
+<!--
+NO EJECUTAR LA SIGUIENTE CELDA SI YA TIENES EL fit5 cargado en la sesión
+-->
+
+```{r eval=FALSE}
+fit5<-arima(ts_20,order=c(8,1,3), 
+            seasonal=list(order=c(3,1,2), 
+            seasonal.periods=12))
+```
+
+## Cumplimiento de supuestos
+
+- Los supuestos a revisar son: homocedasticidad, independencia y normalidad de los residuales.
+
+```{r include=FALSE}
+Y<-as.numeric(fit5$residuals)
+X<-1:length(fit5$residuals)
+bptest(Y~X)
+adf.test(fit5$residuals)
+Box.test(fit5$residuals, lag=12)
+shapiro.test(fit5$residuals)
+```
+
+| Prueba                | P-valor    |
+|-----------------------|------------|
+| `bptest`              | 0.057      |
+| `adf.test`            | 0.01       |
+| `Box.test lag = 12`   | 0.01       |
+| `shapiro.test`        | <2.2e16    |
+<!--
+Se cumple homocedasticidad en los residuos por casi nada y con la prueba de hipótesis de Dickey-Fuller se rechaza la hipótesis nula de que los residuos no son estacionarios y con la prueba de Box se rechaza la hipótesis nula de que los residuos no son independientes.
+-->
+
+## Realizando pronósticos
+
+- Realizamos pronósticos para los siguientes 5 años, es decir 60 meses.
+
+```{r echo=FALSE}
+plot(forecast(fit5, h = 60), col = PALETA[1])
+```
+
+
+```{r}
+Box.test(fit5$residuals, lag=1)
+Box.test(fit5$residuals, lag=2)
+Box.test(fit5$residuals, lag=3)
+Box.test(fit5$residuals, lag=4)
+Box.test(fit5$residuals, lag=5)
+Box.test(fit5$residuals, lag=6)
+Box.test(fit5$residuals, lag=7)
+Box.test(fit5$residuals, lag=8)
+Box.test(fit5$residuals, lag=9)
+Box.test(fit5$residuals, lag=10)
+Box.test(fit5$residuals, lag=11)
+Box.test(fit5$residuals, lag=12)
+Box.test(fit5$residuals, lag=24)
+```
+
+
+```{r}
+Box.test(fit5$residuals, lag=800k)
+```
+
